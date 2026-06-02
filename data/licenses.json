@@ -1,0 +1,32 @@
+{
+  "licenses": [
+    {
+      "license_key": "DEMO-SENCHI-001",
+      "customer_name": "Client Demo",
+      "customer_email": "demo@example.com",
+      "status": "suspended",
+      "expires_at": "2026-03-21T23:59:59.999Z",
+      "machine_id": null,
+      "machine_ids": [],
+      "max_devices": 1,
+      "last_seen_at": null,
+      "activated_at": null,
+      "last_app_version": null,
+      "notes": "Licence de demonstration a remplacer avant production."
+    },
+    {
+      "license_key": "Tsoinlebatard",
+      "customer_name": "Tsoin-Tsoin",
+      "customer_email": "Tsoin@gmail.com",
+      "status": "active",
+      "expires_at": "07/04/2026",
+      "machine_id": null,
+      "machine_ids": [],
+      "max_devices": 1,
+      "last_seen_at": null,
+      "activated_at": null,
+      "last_app_version": null,
+      "notes": "Enfoirer de merde"
+    }
+  ]
+}
