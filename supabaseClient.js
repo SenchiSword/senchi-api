@@ -1,3 +1,7 @@
+if (typeof globalThis.WebSocket === 'undefined') {
+  globalThis.WebSocket = class DummyWebSocket {};
+}
+
 const { createClient } = require('@supabase/supabase-js');
 
 let client = null;
