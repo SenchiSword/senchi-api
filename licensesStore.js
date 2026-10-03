@@ -96,6 +96,18 @@ async function getLicensesFromSupabase() {
     throw error;
   }
 
+  if (!data || data.length === 0) {
+    const local = readLocalState().licenses;
+    if (local && local.length > 0) {
+      console.log(`Synchronisation de ${local.length} licence(s) locale(s) vers Supabase...`);
+      for (const lic of local) {
+        await saveLicenseToSupabase(lic).catch((err) => console.warn('Erreur synchro Supabase:', err.message));
+      }
+      const recheck = await supabase.from('licenses').select('*').order('created_at', { ascending: false });
+      return (recheck.data || []).map(sanitizeLicense);
+    }
+  }
+
   return (data || []).map(sanitizeLicense);
 }
 
