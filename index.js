@@ -4,7 +4,8 @@ const crypto = require('crypto');
 const {
   getLicenses,
   findLicenseByKey,
-  saveLicense
+  saveLicense,
+  deleteLicense
 } = require('./licensesStore');
 const {
   getActiveAnnouncement,
@@ -710,6 +711,25 @@ app.post('/api/licenses/reset-machines', async (req, res) => {
   res.json({
     ok: true,
     license: updated
+  });
+});
+
+app.post('/api/licenses/delete', async (req, res) => {
+  const { license_key } = req.body || {};
+
+  if (!license_key) {
+    res.status(400).json({
+      ok: false,
+      error: 'license_key is required'
+    });
+    return;
+  }
+
+  await deleteLicense(license_key);
+
+  res.json({
+    ok: true,
+    deleted: license_key
   });
 });
 

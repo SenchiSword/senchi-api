@@ -7,24 +7,10 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function escapeJsSingleQuoted(value) {
-  return String(value || '')
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/\r/g, '\\r')
-    .replace(/\n/g, '\\n');
-}
-
 function formatDateOnly(value, emptyLabel = 'Aucune') {
-  if (!value) {
-    return emptyLabel;
-  }
-
+  if (!value) return emptyLabel;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return escapeHtml(value);
-  }
-
+  if (Number.isNaN(date.getTime())) return escapeHtml(value);
   return new Intl.DateTimeFormat('fr-FR', {
     year: 'numeric',
     month: '2-digit',
@@ -32,1289 +18,1521 @@ function formatDateOnly(value, emptyLabel = 'Aucune') {
   }).format(date);
 }
 
-function formatDateTime(value, emptyLabel = 'Aucune') {
-  if (!value) {
-    return emptyLabel;
-  }
-
+function formatRelativeTime(value) {
+  if (!value) return '';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return escapeHtml(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const diffDays = Math.ceil((date.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+  if (diffDays < 0) {
+    const past = Math.abs(diffDays);
+    return past === 1 ? 'Expiré hier' : `Expiré il y a ${past}j`;
   }
-
-  return new Intl.DateTimeFormat('fr-FR', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(date);
+  if (diffDays === 0) return "Expire aujourd'hui";
+  if (diffDays === 1) return 'Expire demain';
+  return `Dans ${diffDays}j`;
 }
 
 function isExpiringSoon(value) {
-  if (!value) {
-    return false;
-  }
-
+  if (!value) return false;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return false;
-  }
-
+  if (Number.isNaN(date.getTime())) return false;
   const delta = date.getTime() - Date.now();
   return delta >= 0 && delta <= 14 * 24 * 60 * 60 * 1000;
-}
-
-function getStatusLabel(status) {
-  return {
-    active: 'Active',
-    blocked: 'Bloquee',
-    suspended: 'Suspendue',
-    expired: 'Expiree'
-  }[status] || status || 'Inconnu';
-}
-
-function renderLicenseCard(license) {
-  const safeKey = escapeHtml(license.license_key);
-  const safeExpiration = escapeHtml(license.expires_at || '');
-  const machines = Array.isArray(license.machine_ids) ? license.machine_ids : [];
-  const machinesLabel = escapeHtml(machines.length ? machines.join(' | ') : 'Aucune machine rattachee');
-  const notesLabel = escapeHtml(license.notes || 'Aucune note');
-
-  return '<article class="license">' +
-    '<div class="license-head">' +
-      '<div>' +
-        '<strong>' + escapeHtml(license.customer_name || 'Client sans nom') + '</strong><br>' +
-        '<span style="color:var(--muted)">' + escapeHtml(license.customer_email || 'Aucun email') + '</span>' +
-      '</div>' +
-      '<span class="status ' + escapeHtml(license.status) + '">' + escapeHtml(getStatusLabel(license.status)) + '</span>' +
-    '</div>' +
-    '<div class="meta">' +
-      '<div class="meta-item"><span>Cle</span><div class="license-key">' + safeKey + '</div></div>' +
-      '<div class="meta-item"><span>Appareils</span><div>' + escapeHtml(String(machines.length)) + ' / ' + escapeHtml(String(license.max_devices || 1)) + '</div></div>' +
-      '<div class="meta-item"><span>Expiration</span><div>' + formatDateOnly(license.expires_at, 'Aucune') + '</div></div>' +
-      '<div class="meta-item"><span>Derniere activite</span><div>' + formatDateTime(license.last_seen_at, 'Jamais') + '</div></div>' +
-      '<div class="meta-item"><span>Version app</span><div>' + escapeHtml(license.last_app_version || 'Inconnue') + '</div></div>' +
-    '</div>' +
-    '<div class="license-extra">' +
-      '<div class="meta-item meta-item-wide"><span>Machines</span><div>' + machinesLabel + '</div></div>' +
-      '<div class="meta-item meta-item-wide"><span>Notes</span><div>' + notesLabel + '</div></div>' +
-    '</div>' +
-    '<div class="actions">' +
-      '<button type="button" class="primary" data-action="edit-license" data-license-key="' + safeKey + '">Modifier</button>' +
-      '<button type="button" data-action="set-status" data-license-key="' + safeKey + '" data-status="active">Activer</button>' +
-      '<button type="button" data-action="set-status" data-license-key="' + safeKey + '" data-status="suspended">Suspendre</button>' +
-      '<button type="button" data-action="set-status" data-license-key="' + safeKey + '" data-status="blocked">Bloquer</button>' +
-      '<button type="button" data-action="set-status" data-license-key="' + safeKey + '" data-status="expired">Expirer</button>' +
-      '<button type="button" data-action="set-expiration" data-license-key="' + safeKey + '" data-license-expiration="' + safeExpiration + '">Expiration</button>' +
-      '<button type="button" data-action="reset-machines" data-license-key="' + safeKey + '">Reset appareils</button>' +
-    '</div>' +
-  '</article>';
 }
 
 function renderAdminLicensesPage(initialLicenses = [], initialAnnouncement = null) {
   const serializedLicenses = JSON.stringify(Array.isArray(initialLicenses) ? initialLicenses : []);
   const serializedAnnouncement = JSON.stringify(initialAnnouncement || null);
+
   const total = initialLicenses.length;
-  const active = initialLicenses.filter((license) => license.status === 'active').length;
-  const risk = initialLicenses.filter((license) => ['blocked', 'suspended', 'expired'].includes(license.status)).length;
-  const expiring = initialLicenses.filter((license) => isExpiringSoon(license.expires_at)).length;
-  const initialSubtitle = total ? `${total} licence(s) affichee(s) sur ${total}.` : 'Aucune licence pour le moment.';
-  const initialCardsHtml = total
-    ? initialLicenses.map((license) => renderLicenseCard(license)).join('')
-    : '<div class="empty">Aucune licence pour le moment.</div>';
+  const active = initialLicenses.filter((l) => l.status === 'active').length;
+  const risk = initialLicenses.filter((l) => ['blocked', 'suspended', 'expired'].includes(l.status)).length;
+  const expiring = initialLicenses.filter((l) => isExpiringSoon(l.expires_at)).length;
+
   return `<!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin licences</title>
+  <title>Senchi Admin • Gestion des Licences</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <style>
     :root {
       color-scheme: dark;
-      --bg: #07111f;
-      --bg-soft: #0d1a2d;
-      --panel: rgba(11, 20, 36, 0.82);
-      --panel-strong: rgba(18, 31, 52, 0.96);
-      --line: rgba(127, 201, 255, 0.16);
-      --line-strong: rgba(127, 201, 255, 0.28);
-      --text: #eef6ff;
-      --muted: #8ea7c6;
-      --accent: #81d8ff;
-      --accent-2: #5eb3ff;
-      --danger: #ffb7c5;
-      --success: #91f0bc;
-      --warning: #ffd89b;
-      --shadow: 0 30px 70px rgba(0, 0, 0, 0.32);
+      --bg: #090D16;
+      --surface: #111827;
+      --surface-card: #141E33;
+      --surface-hover: #1A2744;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: #38BDF8;
+      
+      --text-main: #F8FAFC;
+      --text-muted: #94A3B8;
+      --text-dim: #64748B;
+      
+      --cyan: #38BDF8;
+      --cyan-glow: rgba(56, 189, 248, 0.25);
+      --blue: #3B82F6;
+      --emerald: #10B981;
+      --emerald-glow: rgba(16, 185, 129, 0.2);
+      --amber: #F59E0B;
+      --rose: #F43F5E;
+      --purple: #8B5CF6;
+      
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-xl: 28px;
+      
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+      --shadow-md: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+      --shadow-lg: 0 20px 40px -10px rgba(0, 0, 0, 0.6);
     }
 
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
     body {
-      margin: 0;
-      font-family: Inter, Arial, sans-serif;
-      background:
-        radial-gradient(circle at top left, rgba(94, 179, 255, 0.14), transparent 26%),
-        radial-gradient(circle at top right, rgba(77, 208, 255, 0.08), transparent 22%),
-        radial-gradient(circle at bottom left, rgba(85, 164, 255, 0.08), transparent 28%),
-        linear-gradient(180deg, var(--bg) 0%, #050d18 100%);
-      color: var(--text);
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
       min-height: 100vh;
-    }
-
-    .app {
-      width: min(1380px, calc(100vw - 28px));
-      margin: 0 auto;
-      padding: 24px 0 32px;
-    }
-
-    .panel {
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
-        var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      padding: 20px;
-      margin-bottom: 16px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(18px);
-    }
-
-    h1, h2 {
-      margin: 0 0 10px;
-      letter-spacing: -0.03em;
-    }
-
-    p {
-      margin: 0;
-      color: var(--muted);
+      background-image: 
+        radial-gradient(at 10% 10%, rgba(56, 189, 248, 0.08) 0px, transparent 40%),
+        radial-gradient(at 90% 90%, rgba(59, 130, 246, 0.06) 0px, transparent 40%),
+        linear-gradient(to bottom, #090D16, #05070B);
+      background-attachment: fixed;
       line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
     }
 
-    .toolbar {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 220px auto;
-      gap: 12px;
-      align-items: end;
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 32px 24px 60px;
     }
 
-    label {
-      display: grid;
-      gap: 6px;
-      font-size: 0.9rem;
-      font-weight: 700;
-    }
-
-    input, select, textarea, button {
-      font: inherit;
-    }
-
-    input, select, textarea {
-      width: 100%;
-      min-height: 42px;
-      padding: 10px 12px;
-      border-radius: 14px;
-      border: 1px solid var(--line);
-      background: rgba(7, 15, 28, 0.94);
-      color: var(--text);
-    }
-
-    textarea {
-      min-height: 100px;
-      resize: vertical;
-    }
-
-    button {
-      min-height: 42px;
-      padding: 10px 14px;
-      border-radius: 14px;
-      border: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(17, 34, 58, 0.96), rgba(11, 22, 39, 0.98));
-      color: var(--text);
-      cursor: pointer;
-      transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
-    }
-
-    button:hover {
-      transform: translateY(-1px);
-      border-color: var(--line-strong);
-    }
-
-    button.primary {
-      background: linear-gradient(135deg, #e5f6ff, #8fd3ff 55%, #69bfff);
-      color: #08253d;
-      border: 0;
-      font-weight: 700;
-      box-shadow: 0 12px 24px rgba(85, 177, 255, 0.24);
-    }
-
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-    }
-
-    .stat {
-      padding: 16px;
-      border-radius: 18px;
-      background:
-        radial-gradient(circle at top right, rgba(129, 216, 255, 0.1), transparent 40%),
-        rgba(255, 255, 255, 0.04);
-      border: 1px solid var(--line);
-    }
-
-    .stat span {
-      display: block;
-      color: var(--muted);
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      font-weight: 700;
-    }
-
-    .stat strong {
-      display: block;
-      font-size: 1.7rem;
-      margin-top: 10px;
-    }
-
-    #feedback {
-      display: none;
-      margin-top: 12px;
-      padding: 12px 14px;
-      border-radius: 12px;
-      border: 1px solid rgba(140, 240, 182, 0.2);
-      background: rgba(140, 240, 182, 0.08);
-      color: var(--success);
-      font-weight: 700;
-    }
-
-    #feedback.visible { display: block; }
-    #feedback.error {
-      border-color: rgba(255, 179, 192, 0.2);
-      background: rgba(255, 179, 192, 0.08);
-      color: var(--danger);
-    }
-
-    .licenses {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-    }
-
-    .license {
-      border: 1px solid var(--line);
-      border-radius: 22px;
-      padding: 14px;
-      background:
-        radial-gradient(circle at top right, rgba(129, 216, 255, 0.08), transparent 30%),
-        linear-gradient(180deg, rgba(17, 28, 47, 0.96), rgba(13, 22, 37, 0.98));
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    }
-
-    .license-head {
+    /* Top Navigation Header */
+    header.navbar {
       display: flex;
       justify-content: space-between;
-      gap: 12px;
-      align-items: flex-start;
-      margin-bottom: 8px;
+      align-items: center;
+      padding: 16px 24px;
+      background: rgba(17, 24, 39, 0.7);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      margin-bottom: 28px;
+      box-shadow: var(--shadow-sm);
     }
 
-    .status {
-      padding: 5px 10px;
-      border-radius: 999px;
-      font-size: 0.74rem;
-      font-weight: 700;
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.04);
-    }
-
-    .status.active { color: var(--success); background: rgba(145, 240, 188, 0.08); }
-    .status.blocked { color: var(--danger); background: rgba(255, 183, 197, 0.08); }
-    .status.suspended { color: var(--warning); background: rgba(255, 216, 155, 0.08); }
-    .status.expired { color: #d4ceff; background: rgba(212, 206, 255, 0.08); }
-
-    .meta {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 7px;
-      margin-bottom: 7px;
-    }
-
-    .meta-item {
-      padding: 9px 11px;
-      border-radius: 14px;
-      background: rgba(255, 255, 255, 0.035);
-      border: 1px solid var(--line);
-      min-width: 0;
-    }
-
-    .meta-item span {
-      display: block;
-      color: var(--muted);
-      font-size: 0.72rem;
-      margin-bottom: 3px;
-    }
-
-    .meta-item div {
-      font-size: 0.92rem;
-      font-weight: 600;
-      line-height: 1.3;
-      word-break: break-word;
-    }
-
-    .license-key {
-      font-family: Consolas, monospace;
-      word-break: break-all;
-    }
-
-    .license-extra {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 7px;
-      margin-bottom: 8px;
-    }
-
-    .meta-item-wide {
-      border-radius: 14px;
-    }
-
-    .actions {
+    .brand {
       display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .license .actions {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 6px;
-    }
-
-    .license .actions button {
-      width: 100%;
-      min-height: 36px;
-      padding: 7px 10px;
-      border-radius: 12px;
-      white-space: nowrap;
-      font-size: 0.92rem;
-    }
-
-    .license-head strong {
-      display: block;
-      margin-bottom: 2px;
-      font-size: 1.05rem;
-    }
-
-    .license-head span[style] {
-      font-size: 0.94rem;
-    }
-
-    @media (max-width: 1180px) {
-      .license .actions {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-    }
-
-    @media (max-width: 980px) {
-      .license-extra,
-      .license .actions {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    dialog {
-      width: min(760px, calc(100vw - 24px));
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      background: #0d1626;
-      color: var(--text);
-      padding: 0;
-      box-shadow: var(--shadow);
-    }
-
-    dialog::backdrop {
-      background: rgba(3, 8, 14, 0.78);
-    }
-
-    .dialog-shell {
-      padding: 18px;
-      display: grid;
+      align-items: center;
       gap: 14px;
     }
 
-    .dialog-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
+    .brand-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #0284C7, #38BDF8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.35);
     }
 
-    .full {
-      grid-column: 1 / -1;
+    .brand-icon svg {
+      width: 24px;
+      height: 24px;
+      color: #fff;
     }
 
-    .empty {
-      padding: 28px 16px;
-      text-align: center;
-      border: 1px dashed var(--line);
-      border-radius: 18px;
-      color: var(--muted);
+    .brand-info h1 {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(to right, #F8FAFC, #BAE6FD);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
 
-    .hero-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 18px;
-      align-items: start;
-    }
-
-    .hero-kicker {
+    .brand-badge {
       display: inline-flex;
-      padding: 6px 12px;
-      border-radius: 999px;
-      background: rgba(129, 216, 255, 0.08);
-      border: 1px solid var(--line);
-      color: var(--accent);
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      margin-bottom: 14px;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--emerald);
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      padding: 2px 8px;
+      border-radius: 20px;
     }
 
-    .hero-title {
-      font-size: clamp(1.8rem, 3.4vw, 2.6rem);
-      margin-bottom: 8px;
+    .brand-badge::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 8px var(--emerald);
+      animation: pulse 2s infinite;
     }
 
-    .hero-copy {
-      max-width: 760px;
-      font-size: 0.98rem;
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
     }
 
-    .hero-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      justify-content: flex-end;
-    }
-
-    .section-title {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-      gap: 12px;
-      margin-bottom: 14px;
-    }
-
-    .section-title h2 {
-      margin-bottom: 4px;
-    }
-
-    .announcement-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 220px 220px;
-      gap: 12px;
-      align-items: end;
-    }
-
-    .announcement-toggle {
+    .nav-actions {
       display: flex;
       align-items: center;
       gap: 10px;
-      min-height: 42px;
-      padding: 0 2px;
-      color: var(--muted);
-      font-size: 0.92rem;
-      font-weight: 700;
     }
 
-    .announcement-toggle input {
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      font-family: inherit;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      text-decoration: none;
+      user-select: none;
+    }
+
+    .btn:hover {
+      background: var(--surface-hover);
+      border-color: rgba(255, 255, 255, 0.16);
+      transform: translateY(-1px);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0284C7, #0EA5E9 60%, #38BDF8);
+      color: #031525;
+      font-weight: 700;
+      border: none;
+      box-shadow: 0 4px 18px rgba(14, 165, 233, 0.35);
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #0369A1, #0284C7 60%, #38BDF8);
+      box-shadow: 0 6px 22px rgba(14, 165, 233, 0.5);
+    }
+
+    .btn-icon-only {
+      padding: 10px;
+      border-radius: var(--radius-md);
+    }
+
+    /* KPI Metrics Cards */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .metric-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .metric-info span {
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    .metric-info strong {
+      display: block;
+      font-size: 2rem;
+      font-weight: 800;
+      margin-top: 4px;
+      letter-spacing: -0.03em;
+    }
+
+    .metric-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .metric-icon svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    .metric-total .metric-icon { background: rgba(56, 189, 248, 0.12); color: var(--cyan); }
+    .metric-active .metric-icon { background: rgba(16, 185, 129, 0.12); color: var(--emerald); }
+    .metric-risk .metric-icon { background: rgba(244, 63, 94, 0.12); color: var(--rose); }
+    .metric-expiring .metric-icon { background: rgba(245, 158, 11, 0.12); color: var(--amber); }
+
+    /* Main Table Section */
+    .table-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-md);
+      overflow: hidden;
+    }
+
+    /* Table Toolbar */
+    .table-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(17, 24, 39, 0.5);
+    }
+
+    .search-box {
+      position: relative;
+      flex: 1;
+      min-width: 280px;
+      max-width: 420px;
+    }
+
+    .search-box svg {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
       width: 18px;
       height: 18px;
-      min-height: auto;
-      accent-color: #7fd3ff;
+      color: var(--text-dim);
+      pointer-events: none;
     }
 
-    @media (max-width: 980px) {
-      .toolbar, .stats, .licenses, .meta, .dialog-grid, .hero-grid, .announcement-grid {
-        grid-template-columns: 1fr;
-      }
+    .search-input {
+      width: 100%;
+      padding: 10px 14px 10px 42px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--text-main);
+      font-size: 0.9rem;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.2s;
+    }
 
-      .hero-actions {
-        justify-content: flex-start;
-      }
+    .search-input:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 3px var(--cyan-glow);
+    }
+
+    /* Filter Pills */
+    .filter-tabs {
+      display: flex;
+      gap: 6px;
+      background: var(--bg);
+      padding: 4px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+    }
+
+    .filter-tab {
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.84rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+
+    .filter-tab.active {
+      background: var(--surface-card);
+      color: var(--cyan);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .filter-tab:hover:not(.active) {
+      color: var(--text-main);
+    }
+
+    /* Data Table */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.88rem;
+    }
+
+    thead th {
+      padding: 14px 20px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      background: rgba(11, 15, 25, 0.6);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+
+    tbody tr:hover {
+      background: var(--surface-hover);
+    }
+
+    tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    tbody td {
+      padding: 16px 20px;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    /* Customer Info Cell */
+    .customer-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(59, 130, 246, 0.2));
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: var(--cyan);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.88rem;
+      flex-shrink: 0;
+    }
+
+    .customer-details strong {
+      display: block;
+      font-weight: 700;
+      color: var(--text-main);
+      font-size: 0.92rem;
+    }
+
+    .customer-details span {
+      display: block;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+    }
+
+    /* License Key Cell */
+    .key-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: #E2E8F0;
+    }
+
+    .copy-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px;
+      border-radius: 4px;
+      transition: color 0.15s;
+    }
+
+    .copy-btn:hover {
+      color: var(--cyan);
+    }
+
+    /* Status Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    .badge.active {
+      background: rgba(16, 185, 129, 0.12);
+      color: #34D399;
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+    .badge.active .badge-dot { background: #34D399; box-shadow: 0 0 8px #34D399; }
+
+    .badge.suspended {
+      background: rgba(245, 158, 11, 0.12);
+      color: #FBBF24;
+      border: 1px solid rgba(245, 158, 11, 0.25);
+    }
+    .badge.suspended .badge-dot { background: #FBBF24; box-shadow: 0 0 8px #FBBF24; }
+
+    .badge.blocked {
+      background: rgba(244, 63, 94, 0.12);
+      color: #FB7185;
+      border: 1px solid rgba(244, 63, 94, 0.25);
+    }
+    .badge.blocked .badge-dot { background: #FB7185; box-shadow: 0 0 8px #FB7185; }
+
+    .badge.expired {
+      background: rgba(100, 116, 139, 0.15);
+      color: #94A3B8;
+      border: 1px solid rgba(100, 116, 139, 0.25);
+    }
+    .badge.expired .badge-dot { background: #94A3B8; }
+
+    /* Expiration Column */
+    .exp-wrapper strong {
+      display: block;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+
+    .exp-relative {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-dim);
+    }
+
+    .exp-relative.warning {
+      color: var(--amber);
+    }
+
+    .exp-relative.danger {
+      color: var(--rose);
+    }
+
+    /* Device Cell */
+    .device-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .device-count {
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .machine-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--cyan);
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.18);
+      padding: 2px 6px;
+      border-radius: 4px;
+      max-width: 110px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: help;
+    }
+
+    .btn-unlink {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 4px 6px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.74rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s;
+    }
+
+    .btn-unlink:hover {
+      background: rgba(244, 63, 94, 0.12);
+      border-color: rgba(244, 63, 94, 0.3);
+      color: var(--rose);
+    }
+
+    /* Actions Column Buttons */
+    .action-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .action-btn {
+      padding: 6px 10px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-card);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+
+    .action-btn:hover {
+      background: var(--surface-hover);
+      color: var(--text-main);
+      border-color: rgba(255, 255, 255, 0.18);
+    }
+
+    .action-btn.edit-btn:hover {
+      color: var(--cyan);
+      border-color: var(--cyan);
+    }
+
+    .action-btn.delete-btn:hover {
+      background: rgba(244, 63, 94, 0.12);
+      border-color: rgba(244, 63, 94, 0.3);
+      color: var(--rose);
+    }
+
+    /* Empty state */
+    .empty-state {
+      padding: 60px 20px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    .empty-state svg {
+      width: 48px;
+      height: 48px;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    /* Modal Dialogs */
+    dialog {
+      margin: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      background: rgba(17, 24, 39, 0.94);
+      backdrop-filter: blur(24px);
+      color: var(--text-main);
+      padding: 0;
+      max-width: 560px;
+      width: calc(100% - 32px);
+      box-shadow: var(--shadow-lg);
+      outline: none;
+    }
+
+    dialog::backdrop {
+      background: rgba(4, 7, 13, 0.75);
+      backdrop-filter: blur(8px);
+    }
+
+    .dialog-header {
+      padding: 24px 24px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .dialog-header h3 {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .close-dialog-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 1.25rem;
+      line-height: 1;
+      padding: 4px;
+    }
+
+    .close-dialog-btn:hover {
+      color: var(--text-main);
+    }
+
+    .dialog-body {
+      padding: 24px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .form-group {
+      display: grid;
+      gap: 6px;
+    }
+
+    .form-group label {
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--text-main);
+      font-size: 0.9rem;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .form-control:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 3px var(--cyan-glow);
+    }
+
+    .input-with-button {
+      display: flex;
+      gap: 8px;
+    }
+
+    .quick-preset-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .chip-btn {
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+
+    .chip-btn:hover {
+      background: rgba(56, 189, 248, 0.12);
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+
+    .dialog-footer {
+      padding: 16px 24px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    /* Toast Notifications */
+    #toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 9999;
+      display: grid;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    .toast {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 12px 18px;
+      border-radius: var(--radius-md);
+      font-size: 0.88rem;
+      font-weight: 600;
+      box-shadow: var(--shadow-lg);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      pointer-events: auto;
+      animation: slideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .toast.success { border-color: rgba(16, 185, 129, 0.4); }
+    .toast.error { border-color: rgba(244, 63, 94, 0.4); }
+
+    @keyframes slideIn {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    @media (max-width: 860px) {
+      .form-row { grid-template-columns: 1fr; }
+      .metrics-grid { grid-template-columns: 1fr 1fr; }
+      .table-toolbar { flex-direction: column; align-items: stretch; }
+      .search-box { max-width: none; }
     }
   </style>
 </head>
 <body>
-  <main class="app">
-    <section class="panel">
-      <div class="hero-grid">
-        <div>
-          <div class="hero-kicker">Admin licences</div>
-          <h1 class="hero-title">Pilotage des acces clients</h1>
-          <p class="hero-copy">Un tableau pour suivre les activations, voir l'etat des machines, repérer les versions app utilisées et intervenir rapidement.</p>
+  <div class="container">
+    <!-- Top Navbar -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
         </div>
-        <div class="hero-actions">
-          <button type="button" id="refreshLicensesButton">Rafraichir</button>
-          <button type="button" class="primary" id="openCreateLicenseButton">+ Creer une licence</button>
+        <div class="brand-info">
+          <h1>SENCHI SWORD • LICENCES</h1>
+          <div class="brand-badge">Supabase Live</div>
+        </div>
+      </div>
+      <div class="nav-actions">
+        <button type="button" class="btn" id="openAnnouncementBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          Annonce en jeu
+        </button>
+        <button type="button" class="btn" id="refreshBtn" title="Actualiser la liste">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="refreshIcon"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          Actualiser
+        </button>
+        <button type="button" class="btn btn-primary" id="openCreateBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nouvelle Licence
+        </button>
+      </div>
+    </header>
+
+    <!-- Metrics Cards -->
+    <section class="metrics-grid">
+      <div class="metric-card metric-total">
+        <div class="metric-info">
+          <span>Total Licences</span>
+          <strong id="statTotal">${total}</strong>
+        </div>
+        <div class="metric-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>
+        </div>
+      </div>
+      <div class="metric-card metric-active">
+        <div class="metric-info">
+          <span>Licences Actives</span>
+          <strong id="statActive">${active}</strong>
+        </div>
+        <div class="metric-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+      </div>
+      <div class="metric-card metric-expiring">
+        <div class="metric-info">
+          <span>Expiration &lt; 14j</span>
+          <strong id="statExpiring">${expiring}</strong>
+        </div>
+        <div class="metric-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+      </div>
+      <div class="metric-card metric-risk">
+        <div class="metric-info">
+          <span>Bloquées / Expirées</span>
+          <strong id="statRisk">${risk}</strong>
+        </div>
+        <div class="metric-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
         </div>
       </div>
     </section>
 
-    <section class="panel">
-      <div class="toolbar">
-        <label>
-          Recherche
-          <input id="searchInput" type="search" placeholder="Nom client, email, cle, note, machine...">
-        </label>
-        <label>
-          Filtre statut
-          <select id="statusFilter">
-            <option value="all">Tous</option>
-            <option value="active">Actives</option>
-            <option value="blocked">Bloquees</option>
-            <option value="suspended">Suspendues</option>
-            <option value="expired">Expirees</option>
-          </select>
-        </label>
-        <div class="actions">
-          <button type="button" id="clearFiltersButton">Effacer</button>
+    <!-- Main Table Container -->
+    <section class="table-section">
+      <div class="table-toolbar">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="search" id="searchInput" class="search-input" placeholder="Rechercher par client, email, clé, note, machine...">
+        </div>
+        <div class="filter-tabs">
+          <button type="button" class="filter-tab active" data-filter="all">Toutes</button>
+          <button type="button" class="filter-tab" data-filter="active">Actives</button>
+          <button type="button" class="filter-tab" data-filter="expiring">Bientôt expirées</button>
+          <button type="button" class="filter-tab" data-filter="blocked">Bloquées</button>
+          <button type="button" class="filter-tab" data-filter="expired">Expirées</button>
         </div>
       </div>
-      <div id="feedback"></div>
-    </section>
 
-    <section class="panel">
-      <div class="stats">
-        <div class="stat"><span>Licences totales</span><strong id="statTotal">${total}</strong></div>
-        <div class="stat"><span>Licences actives</span><strong id="statActive">${active}</strong></div>
-        <div class="stat"><span>A surveiller</span><strong id="statRisk">${risk}</strong></div>
-        <div class="stat"><span>Expiration proche</span><strong id="statExpiring">${expiring}</strong></div>
+      <div class="table-container">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Clé de Licence</th>
+              <th>Statut</th>
+              <th>Expiration</th>
+              <th>Machine liée</th>
+              <th>Dernière Activité</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="licensesTableBody">
+            <!-- Dynamic rows rendered by JS -->
+          </tbody>
+        </table>
       </div>
     </section>
+  </div>
 
-    <section class="panel">
-      <div class="section-title">
-        <div>
-          <h2>Annonce active</h2>
-          <p>Publie une annonce obligatoire globale ou ciblée sur une licence ou un email. L'utilisateur la verra une seule fois, puis elle ne rebouclera pas tant que l'annonce ne change pas.</p>
+  <!-- Dialog: Create / Edit License -->
+  <dialog id="licenseDialog">
+    <form id="licenseForm">
+      <input type="hidden" id="formMode" value="create">
+      <div class="dialog-header">
+        <h3 id="dialogTitle">Nouvelle Licence</h3>
+        <button type="button" class="close-dialog-btn" onclick="document.getElementById('licenseDialog').close()">✕</button>
+      </div>
+      <div class="dialog-body">
+        <div class="form-group">
+          <label for="formKey">Clé de Licence</label>
+          <div class="input-with-button">
+            <input type="text" id="formKey" class="form-control" style="font-family:'JetBrains Mono',monospace;" required placeholder="Ex: SENCHI-XXXX-XXXX">
+            <button type="button" class="btn" id="genKeyBtn" title="Générer une clé aléatoire">🎲 Générer</button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="formName">Nom du Client</label>
+            <input type="text" id="formName" class="form-control" required placeholder="Ex: Jean Dupont">
+          </div>
+          <div class="form-group">
+            <label for="formEmail">Email (Optionnel)</label>
+            <input type="email" id="formEmail" class="form-control" placeholder="client@exemple.com">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="formStatus">Statut</label>
+            <select id="formStatus" class="form-control">
+              <option value="active">Active</option>
+              <option value="suspended">Suspendue</option>
+              <option value="blocked">Bloquée</option>
+              <option value="expired">Expirée</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="formDevices">Max Appareils</label>
+            <input type="number" id="formDevices" class="form-control" min="1" max="10" value="1">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="formExpiration">Date d'Expiration</label>
+          <input type="date" id="formExpiration" class="form-control">
+          <div class="quick-preset-chips">
+            <button type="button" class="chip-btn" data-days="7">+7 jours</button>
+            <button type="button" class="chip-btn" data-days="30">+30 jours</button>
+            <button type="button" class="chip-btn" data-days="90">+3 mois</button>
+            <button type="button" class="chip-btn" data-days="365">+1 an</button>
+            <button type="button" class="chip-btn" data-days="0">Permanent</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="formNotes">Notes Internes</label>
+          <textarea id="formNotes" class="form-control" rows="2" placeholder="Informations de contact, moyen de paiement..."></textarea>
         </div>
       </div>
-      <div class="announcement-grid">
-        <label>
-          Titre
-          <input id="announcementTitle" type="text" placeholder="Maintenance, mise a jour, information...">
-        </label>
-        <label>
-          Cible
-          <select id="announcementTargetType">
-            <option value="all">Tous les utilisateurs</option>
-            <option value="license_key">Licence precise</option>
-            <option value="customer_email">Email precis</option>
-          </select>
-        </label>
-        <label>
-          Valeur cible
-          <input id="announcementTargetValue" type="text" placeholder="Laisse vide pour une annonce globale">
-        </label>
-        <label style="grid-column:1 / -1;">
-          Message
-          <textarea id="announcementMessage" placeholder="Ton message obligatoire dans l'application..."></textarea>
-        </label>
-        <label class="announcement-toggle">
-          <input id="announcementActive" type="checkbox">
-          <span>Annonce active</span>
-        </label>
-        <div class="actions" style="grid-column:1 / -1;">
-          <button type="button" class="primary" id="saveAnnouncementButton">Enregistrer l'annonce</button>
-          <button type="button" id="clearAnnouncementButton">Retirer l'annonce</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="section-title">
-        <div>
-          <h2>Portefeuille clients</h2>
-          <p id="tableSubtitle">${escapeHtml(initialSubtitle)}</p>
-        </div>
-      </div>
-      <div class="licenses" id="licensesGrid">
-        ${initialCardsHtml}
-      </div>
-    </section>
-  </main>
-
-  <dialog id="createLicenseDialog">
-    <form method="dialog" class="dialog-shell" id="createLicenseForm">
-      <h2>Nouvelle licence</h2>
-      <div class="dialog-grid">
-        <label>Cle de licence<input id="licenseKey" name="license_key" type="text" required></label>
-        <label>Nom du client<input id="customerName" name="customer_name" type="text" required></label>
-        <label>Email<input id="customerEmail" name="customer_email" type="email"></label>
-        <label>Statut
-          <select id="licenseStatus" name="status">
-            <option value="active">Active</option>
-            <option value="blocked">Bloquee</option>
-            <option value="suspended">Suspendue</option>
-            <option value="expired">Expiree</option>
-          </select>
-        </label>
-        <label>Expiration<input id="licenseExpiration" name="expires_at" type="date"></label>
-        <label>Duree rapide
-          <select id="licenseDurationPreset">
-            <option value="">Choisir...</option>
-            <option value="7d">7 jours</option>
-            <option value="1m">1 mois</option>
-            <option value="3m">3 mois</option>
-            <option value="6m">6 mois</option>
-            <option value="1y">1 an</option>
-          </select>
-        </label>
-        <label>Max appareils<input id="licenseDevices" name="max_devices" type="number" min="1" step="1" value="1"></label>
-        <label class="full">Notes<textarea id="licenseNotes" name="notes"></textarea></label>
-      </div>
-      <div class="actions">
-        <button type="button" id="closeCreateLicenseButton">Annuler</button>
-        <button type="submit" class="primary">Enregistrer</button>
+      <div class="dialog-footer">
+        <button type="button" class="btn" onclick="document.getElementById('licenseDialog').close()">Annuler</button>
+        <button type="submit" class="btn btn-primary" id="saveLicenseBtn">Enregistrer</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="editLicenseDialog">
-    <form method="dialog" class="dialog-shell" id="editLicenseForm">
-      <h2>Modifier la licence</h2>
-      <div class="dialog-grid">
-        <label>Cle de licence<input id="editLicenseKey" name="license_key" type="text" readonly></label>
-        <label>Nom du client<input id="editCustomerName" name="customer_name" type="text" required></label>
-        <label>Email<input id="editCustomerEmail" name="customer_email" type="email"></label>
-        <label>Statut
-          <select id="editLicenseStatus" name="status">
-            <option value="active">Active</option>
-            <option value="blocked">Bloquee</option>
-            <option value="suspended">Suspendue</option>
-            <option value="expired">Expiree</option>
-          </select>
-        </label>
-        <label>Expiration<input id="editLicenseExpiration" name="expires_at" type="date"></label>
-        <label>Duree rapide
-          <select id="editLicenseDurationPreset">
-            <option value="">Choisir...</option>
-            <option value="7d">7 jours</option>
-            <option value="1m">1 mois</option>
-            <option value="3m">3 mois</option>
-            <option value="6m">6 mois</option>
-            <option value="1y">1 an</option>
-          </select>
-        </label>
-        <label>Max appareils<input id="editLicenseDevices" name="max_devices" type="number" min="1" step="1" value="1"></label>
-        <label class="full">Notes<textarea id="editLicenseNotes" name="notes"></textarea></label>
+  <!-- Dialog: Announcement -->
+  <dialog id="announcementDialog">
+    <form id="announcementForm">
+      <div class="dialog-header">
+        <h3>📢 Annonce en Jeu (Pop-up Utilisateurs)</h3>
+        <button type="button" class="close-dialog-btn" onclick="document.getElementById('announcementDialog').close()">✕</button>
       </div>
-      <div class="actions">
-        <button type="button" id="closeEditLicenseButton">Annuler</button>
-        <button type="submit" class="primary">Enregistrer</button>
+      <div class="dialog-body">
+        <p style="font-size:0.86rem; color:var(--text-muted);">
+          Publie une alerte qui s'affichera directement sur l'écran des utilisateurs au lancement de l'application.
+        </p>
+        <div class="form-group">
+          <label for="annTitle">Titre de l'annonce</label>
+          <input type="text" id="annTitle" class="form-control" placeholder="Ex: Maintenance prévue ce soir">
+        </div>
+        <div class="form-group">
+          <label for="annMessage">Message complet</label>
+          <textarea id="annMessage" class="form-control" rows="4" placeholder="Tapez votre message ici..."></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="annTargetType">Cible</label>
+            <select id="annTargetType" class="form-control">
+              <option value="all">Tous les utilisateurs</option>
+              <option value="license_key">Une clé spécifique</option>
+              <option value="customer_email">Un email spécifique</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="annTargetValue">Valeur de la cible</label>
+            <input type="text" id="annTargetValue" class="form-control" placeholder="Clé ou email ciblé">
+          </div>
+        </div>
+        <div class="form-group" style="display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" id="annActive" style="width:18px; height:18px; accent-color:var(--cyan);">
+          <label for="annActive" style="cursor:pointer; text-transform:none; font-size:0.9rem;">Diffuser cette annonce maintenant</label>
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn" id="clearAnnBtn" style="color:var(--rose);">Supprimer l'annonce</button>
+        <button type="submit" class="btn btn-primary">Enregistrer l'annonce</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="expirationDialog">
-    <form method="dialog" class="dialog-shell" id="expirationForm">
-      <input type="hidden" name="license_key" id="expirationLicenseKey">
-      <h2>Modifier l'expiration</h2>
-      <label>Date d'expiration<input id="expirationDate" name="expires_at" type="date"></label>
-      <label>Duree rapide
-        <select id="expirationDurationPreset">
-          <option value="">Choisir...</option>
-          <option value="7d">7 jours</option>
-          <option value="1m">1 mois</option>
-          <option value="3m">3 mois</option>
-          <option value="6m">6 mois</option>
-          <option value="1y">1 an</option>
-        </select>
-      </label>
-      <div class="actions">
-        <button type="button" id="clearExpirationButton">Retirer la date</button>
-        <button type="button" id="closeExpirationButton">Annuler</button>
-        <button type="submit" class="primary">Mettre a jour</button>
-      </div>
-    </form>
-  </dialog>
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
 
   <script>
-    window.__INITIAL_LICENSES__ = ${serializedLicenses};
-    window.__INITIAL_ANNOUNCEMENT__ = ${serializedAnnouncement};
+    let licenses = ${serializedLicenses};
+    let activeAnnouncement = ${serializedAnnouncement};
+    let currentFilter = 'all';
 
-    const feedback = document.getElementById('feedback');
-    const licensesGrid = document.getElementById('licensesGrid');
-    const createDialog = document.getElementById('createLicenseDialog');
-    const createForm = document.getElementById('createLicenseForm');
-    const editDialog = document.getElementById('editLicenseDialog');
-    const editForm = document.getElementById('editLicenseForm');
-    const expirationDialog = document.getElementById('expirationDialog');
-    const expirationForm = document.getElementById('expirationForm');
-    const createExpirationInput = document.getElementById('licenseExpiration');
-    const createDurationPreset = document.getElementById('licenseDurationPreset');
-    const editExpirationInput = document.getElementById('editLicenseExpiration');
-    const editDurationPreset = document.getElementById('editLicenseDurationPreset');
-    const expirationDateInput = document.getElementById('expirationDate');
-    const expirationDurationPreset = document.getElementById('expirationDurationPreset');
-    const expirationLicenseKeyInput = document.getElementById('expirationLicenseKey');
+    // Elements
+    const tableBody = document.getElementById('licensesTableBody');
     const searchInput = document.getElementById('searchInput');
-    const statusFilter = document.getElementById('statusFilter');
-    const tableSubtitle = document.getElementById('tableSubtitle');
-    const statTotal = document.getElementById('statTotal');
-    const statActive = document.getElementById('statActive');
-    const statRisk = document.getElementById('statRisk');
-    const statExpiring = document.getElementById('statExpiring');
-    const refreshLicensesButton = document.getElementById('refreshLicensesButton');
-    const openCreateLicenseButton = document.getElementById('openCreateLicenseButton');
-    const clearFiltersButton = document.getElementById('clearFiltersButton');
-    const closeCreateLicenseButton = document.getElementById('closeCreateLicenseButton');
-    const closeEditLicenseButton = document.getElementById('closeEditLicenseButton');
-    const clearExpirationButton = document.getElementById('clearExpirationButton');
-    const closeExpirationButton = document.getElementById('closeExpirationButton');
-    const announcementTitle = document.getElementById('announcementTitle');
-    const announcementMessage = document.getElementById('announcementMessage');
-    const announcementTargetType = document.getElementById('announcementTargetType');
-    const announcementTargetValue = document.getElementById('announcementTargetValue');
-    const announcementActive = document.getElementById('announcementActive');
-    const saveAnnouncementButton = document.getElementById('saveAnnouncementButton');
-    const clearAnnouncementButton = document.getElementById('clearAnnouncementButton');
+    const filterTabs = document.querySelectorAll('.filter-tab');
+    const licenseDialog = document.getElementById('licenseDialog');
+    const licenseForm = document.getElementById('licenseForm');
+    const announcementDialog = document.getElementById('announcementDialog');
+    const announcementForm = document.getElementById('announcementForm');
 
-    let allLicenses = Array.isArray(window.__INITIAL_LICENSES__) ? window.__INITIAL_LICENSES__ : [];
-    let activeAnnouncement = window.__INITIAL_ANNOUNCEMENT__ || null;
-    const statusLabels = {
-      active: 'Active',
-      blocked: 'Bloquee',
-      suspended: 'Suspendue',
-      expired: 'Expiree'
-    };
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = 'toast ' + type;
+      toast.innerHTML = '<span>' + (type === 'success' ? '✓' : '⚠️') + '</span> ' + message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        toast.style.transition = 'all 0.2s';
+        setTimeout(() => toast.remove(), 200);
+      }, 3000);
+    }
 
-    function setFeedback(message, isError = false) {
-      feedback.textContent = message || '';
-      feedback.className = message ? 'visible' : '';
-      if (message && isError) {
-        feedback.classList.add('error');
+    function generateLicenseKey() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      function chunk(len) {
+        let str = '';
+        for (let i = 0; i < len; i++) str += chars.charAt(Math.floor(Math.random() * chars.length));
+        return str;
       }
+      return 'SENCHI-' + chunk(4) + '-' + chunk(4);
     }
 
-    function updateAnnouncementTargetField() {
-      announcementTargetValue.disabled = announcementTargetType.value === 'all';
-      if (announcementTargetValue.disabled) {
-        announcementTargetValue.value = '';
-        announcementTargetValue.placeholder = 'Laisse vide pour une annonce globale';
-      } else if (announcementTargetType.value === 'license_key') {
-        announcementTargetValue.placeholder = 'Ex: CLIENT-001';
-      } else {
-        announcementTargetValue.placeholder = 'Ex: client@email.com';
-      }
-    }
-
-    function syncAnnouncementForm() {
-      const announcement = activeAnnouncement || null;
-      announcementTitle.value = announcement?.title || '';
-      announcementMessage.value = announcement?.message || '';
-      announcementTargetType.value = announcement?.target_type || 'all';
-      announcementTargetValue.value = announcement?.target_value || '';
-      announcementActive.checked = Boolean(announcement?.active);
-      updateAnnouncementTargetField();
-    }
-
-    async function api(path, options = {}) {
-      const response = await fetch(path, {
-        credentials: 'same-origin',
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...(options.headers || {})
-        }
-      });
-      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-      const data = contentType.includes('application/json')
-        ? await response.json()
-        : { error: await response.text() };
-      if (!response.ok) {
-        throw new Error(data.error || ('HTTP ' + response.status));
-      }
-      return data;
-    }
-
-    function escapeHtml(value) {
-      return String(value || '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-    }
-
-    function escapeJsSingleQuoted(value) {
-      return String(value || '')
-        .replace(/\\\\/g, '\\\\\\\\')
-        .replace(/'/g, "\\'")
-        .replace(/\\r/g, '\\r')
-        .replace(/\\n/g, '\\n');
-    }
-
-    function formatDateTime(value, emptyLabel = 'Aucune') {
-      if (!value) return emptyLabel;
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return escapeHtml(value);
-      return new Intl.DateTimeFormat('fr-FR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      }).format(date);
-    }
-
-    function formatDateOnly(value, emptyLabel = 'Aucune') {
-      if (!value) return emptyLabel;
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return escapeHtml(value);
-      return new Intl.DateTimeFormat('fr-FR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).format(date);
-    }
-
-    function toInputDateValue(value) {
-      if (!value) return '';
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return '';
-      return date.getUTCFullYear() + '-' + String(date.getUTCMonth() + 1).padStart(2, '0') + '-' + String(date.getUTCDate()).padStart(2, '0');
-    }
-
-    function isExpiringSoon(value) {
-      if (!value) return false;
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return false;
-      const delta = date.getTime() - Date.now();
+    function isExpiringSoon(expiresAt) {
+      if (!expiresAt) return false;
+      const d = new Date(expiresAt);
+      if (isNaN(d.getTime())) return false;
+      const delta = d.getTime() - Date.now();
       return delta >= 0 && delta <= 14 * 24 * 60 * 60 * 1000;
     }
 
-    function getPresetExpirationDate(preset) {
-      if (!preset) return '';
-
-      const now = new Date();
-      const target = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-      if (preset === '7d') {
-        target.setDate(target.getDate() + 6);
-      } else if (preset === '1m') {
-        target.setMonth(target.getMonth() + 1);
-      } else if (preset === '3m') {
-        target.setMonth(target.getMonth() + 3);
-      } else if (preset === '6m') {
-        target.setMonth(target.getMonth() + 6);
-      } else if (preset === '1y') {
-        target.setFullYear(target.getFullYear() + 1);
-      } else {
-        return '';
-      }
-
-      return target.getFullYear() + '-' + String(target.getMonth() + 1).padStart(2, '0') + '-' + String(target.getDate()).padStart(2, '0');
-    }
-
-    function bindDurationPreset(selectEl, dateInputEl) {
-      if (!selectEl || !dateInputEl) return;
-      selectEl.addEventListener('change', () => {
-        const value = getPresetExpirationDate(selectEl.value);
-        if (value) {
-          dateInputEl.value = value;
-        }
-      });
-    }
-
-    function getStatusLabel(status) {
-      return statusLabels[status] || status || 'Inconnu';
-    }
-
-    function renderLicenseCard(license) {
-      const safeKey = escapeHtml(license.license_key);
-      const safeExpiration = escapeHtml(license.expires_at || '');
-      const machines = Array.isArray(license.machine_ids) ? license.machine_ids : [];
-
-      return '<article class="license">' +
-        '<div class="license-head">' +
-          '<div>' +
-            '<strong>' + escapeHtml(license.customer_name || 'Client sans nom') + '</strong><br>' +
-            '<span style="color:var(--muted)">' + escapeHtml(license.customer_email || 'Aucun email') + '</span>' +
-          '</div>' +
-          '<span class="status ' + escapeHtml(license.status) + '">' + escapeHtml(getStatusLabel(license.status)) + '</span>' +
-        '</div>' +
-        '<div class="meta">' +
-          '<div class="meta-item"><span>Cle</span><div class="license-key">' + safeKey + '</div></div>' +
-          '<div class="meta-item"><span>Appareils</span><div>' + escapeHtml(String(machines.length)) + ' / ' + escapeHtml(String(license.max_devices || 1)) + '</div></div>' +
-          '<div class="meta-item"><span>Expiration</span><div>' + formatDateOnly(license.expires_at, 'Aucune') + '</div></div>' +
-          '<div class="meta-item"><span>Derniere activite</span><div>' + formatDateTime(license.last_seen_at, 'Jamais') + '</div></div>' +
-          '<div class="meta-item"><span>Version app</span><div>' + escapeHtml(license.last_app_version || 'Inconnue') + '</div></div>' +
-        '</div>' +
-        '<div class="meta-item" style="margin-bottom:12px"><span>Machines</span><div>' + escapeHtml(machines.length ? machines.join(' | ') : 'Aucune machine rattachee') + '</div></div>' +
-        '<div class="meta-item" style="margin-bottom:12px"><span>Notes</span><div>' + escapeHtml(license.notes || 'Aucune note') + '</div></div>' +
-        '<div class="actions">' +
-          '<button type="button" class="primary" data-action="edit-license" data-license-key="' + safeKey + '">Modifier</button>' +
-          '<button type="button" data-action="set-status" data-license-key="' + safeKey + '" data-status="active">Activer</button>' +
-          '<button type="button" data-action="set-status" data-license-key="' + safeKey + '" data-status="suspended">Suspendre</button>' +
-          '<button type="button" data-action="set-status" data-license-key="' + safeKey + '" data-status="blocked">Bloquer</button>' +
-          '<button type="button" data-action="set-status" data-license-key="' + safeKey + '" data-status="expired">Expirer</button>' +
-          '<button type="button" data-action="set-expiration" data-license-key="' + safeKey + '" data-license-expiration="' + safeExpiration + '">Expiration</button>' +
-          '<button type="button" data-action="reset-machines" data-license-key="' + safeKey + '">Reset appareils</button>' +
-        '</div>' +
-      '</article>';
-    }
-
-    function upsertLocalLicense(license) {
-      if (!license || !license.license_key) {
-        return;
-      }
-
-      const nextKey = String(license.license_key);
-      const nextIndex = allLicenses.findIndex((item) => String(item.license_key || '') === nextKey);
-      if (nextIndex >= 0) {
-        allLicenses[nextIndex] = license;
-      } else {
-        allLicenses.push(license);
-      }
-
-      allLicenses.sort((left, right) => {
-        const leftValue = String(left.customer_name || left.license_key || '').toLowerCase();
-        const rightValue = String(right.customer_name || right.license_key || '').toLowerCase();
-        return leftValue.localeCompare(rightValue, 'fr', { numeric: true });
-      });
-    }
-
-    function applyLicenseMutation(license, message) {
-      upsertLocalLicense(license);
-      updateStats(allLicenses);
-      renderLicenses();
-      setFeedback(message);
-    }
-
-    function updateStats(licenses) {
+    function updateMetrics() {
       const total = licenses.length;
-      const active = licenses.filter((license) => license.status === 'active').length;
-      const risk = licenses.filter((license) => ['blocked', 'suspended', 'expired'].includes(license.status)).length;
-      const expiring = licenses.filter((license) => isExpiringSoon(license.expires_at)).length;
-      statTotal.textContent = String(total);
-      statActive.textContent = String(active);
-      statRisk.textContent = String(risk);
-      statExpiring.textContent = String(expiring);
+      const active = licenses.filter(l => l.status === 'active').length;
+      const expiring = licenses.filter(l => isExpiringSoon(l.expires_at)).length;
+      const risk = licenses.filter(l => ['blocked', 'suspended', 'expired'].includes(l.status)).length;
+
+      document.getElementById('statTotal').textContent = total;
+      document.getElementById('statActive').textContent = active;
+      document.getElementById('statExpiring').textContent = expiring;
+      document.getElementById('statRisk').textContent = risk;
     }
 
-    function findLicenseByKey(key) {
-      return allLicenses.find((license) => String(license.license_key || '') === String(key || '')) || null;
-    }
+    function renderTable() {
+      const query = (searchInput.value || '').trim().toLowerCase();
 
-    function getFilteredLicenses() {
-      const search = String(searchInput.value || '').trim().toLowerCase();
-      const status = statusFilter.value || 'all';
-      return allLicenses.filter((license) => {
-        if (status !== 'all' && license.status !== status) return false;
-        if (!search) return true;
-        const haystack = [
-          license.customer_name,
-          license.customer_email,
-          license.license_key,
-          license.last_app_version,
-          license.notes,
-          ...(Array.isArray(license.machine_ids) ? license.machine_ids : [])
-        ].join(' ').toLowerCase();
-        return haystack.includes(search);
+      const filtered = licenses.filter(lic => {
+        // Status filter
+        if (currentFilter === 'active' && lic.status !== 'active') return false;
+        if (currentFilter === 'expiring' && !isExpiringSoon(lic.expires_at)) return false;
+        if (currentFilter === 'blocked' && !['blocked', 'suspended'].includes(lic.status)) return false;
+        if (currentFilter === 'expired' && lic.status !== 'expired') return false;
+
+        // Search query
+        if (query) {
+          const matchKey = (lic.license_key || '').toLowerCase().includes(query);
+          const matchName = (lic.customer_name || '').toLowerCase().includes(query);
+          const matchEmail = (lic.customer_email || '').toLowerCase().includes(query);
+          const matchNotes = (lic.notes || '').toLowerCase().includes(query);
+          const matchMachine = (lic.machine_id || '').toLowerCase().includes(query);
+          return matchKey || matchName || matchEmail || matchNotes || matchMachine;
+        }
+
+        return true;
       });
-    }
 
-    function renderLicenses() {
-      const licenses = getFilteredLicenses();
-      const total = allLicenses.length;
-      tableSubtitle.textContent = total ? licenses.length + ' licence(s) affichee(s) sur ' + total + '.' : 'Aucune licence pour le moment.';
-
-      if (!licenses.length) {
-        licensesGrid.innerHTML = '<div class="empty">Aucun resultat.</div>';
+      if (!filtered.length) {
+        tableBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>' +
+          '<h3>Aucune licence trouvée</h3><p>Aucune licence ne correspond à vos filtres actuels.</p></div></td></tr>';
         return;
       }
 
-      licensesGrid.innerHTML = licenses.map((license) => renderLicenseCard(license)).join('');
+      tableBody.innerHTML = filtered.map(lic => {
+        const safeKey = lic.license_key;
+        const initials = (lic.customer_name || 'C').substring(0, 2).toUpperCase();
+        const machines = Array.isArray(lic.machine_ids) ? lic.machine_ids : (lic.machine_id ? [lic.machine_id] : []);
+        const primaryMachine = machines[0] || '';
+        const shortMachine = primaryMachine ? primaryMachine.substring(0, 10) + '...' : '';
+
+        // Expiration format
+        let expText = 'Permanente';
+        let expRelative = '';
+        let expRelativeClass = '';
+        if (lic.expires_at) {
+          const d = new Date(lic.expires_at);
+          if (!isNaN(d.getTime())) {
+            expText = d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            const diffDays = Math.ceil((d.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+            if (diffDays < 0) {
+              expRelative = 'Expiré (' + Math.abs(diffDays) + 'j)';
+              expRelativeClass = 'danger';
+            } else if (diffDays <= 7) {
+              expRelative = diffDays === 0 ? "Aujourd'hui" : 'Dans ' + diffDays + 'j';
+              expRelativeClass = 'warning';
+            } else {
+              expRelative = 'Dans ' + diffDays + 'j';
+            }
+          }
+        }
+
+        // Status badge label
+        const statusMap = {
+          active: 'Active',
+          suspended: 'Suspendue',
+          blocked: 'Bloquée',
+          expired: 'Expirée'
+        };
+        const statusLabel = statusMap[lic.status] || lic.status;
+
+        // Activity format
+        let actText = 'Jamais';
+        if (lic.last_seen_at) {
+          const ad = new Date(lic.last_seen_at);
+          if (!isNaN(ad.getTime())) {
+            actText = ad.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) + ' ' +
+                      ad.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+          }
+        }
+
+        return '<tr>' +
+          '<td>' +
+            '<div class="customer-cell">' +
+              '<div class="avatar">' + initials + '</div>' +
+              '<div class="customer-details">' +
+                '<strong>' + (lic.customer_name || 'Sans nom') + '</strong>' +
+                '<span>' + (lic.customer_email || 'Aucun email') + '</span>' +
+              '</div>' +
+            '</div>' +
+          '</td>' +
+          '<td>' +
+            '<div class="key-badge">' +
+              '<span>' + safeKey + '</span>' +
+              '<button type="button" class="copy-btn" onclick="copyText(\\'' + safeKey + '\\')" title="Copier la clé">' +
+                '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>' +
+              '</button>' +
+            '</div>' +
+          '</td>' +
+          '<td>' +
+            '<span class="badge ' + (lic.status || 'active') + '">' +
+              '<span class="badge-dot"></span>' + statusLabel +
+            '</span>' +
+          '</td>' +
+          '<td>' +
+            '<div class="exp-wrapper">' +
+              '<strong>' + expText + '</strong>' +
+              (expRelative ? '<span class="exp-relative ' + expRelativeClass + '">' + expRelative + '</span>' : '') +
+            '</div>' +
+          '</td>' +
+          '<td>' +
+            '<div class="device-cell">' +
+              '<span class="device-count">' + machines.length + '/' + (lic.max_devices || 1) + '</span>' +
+              (primaryMachine ? 
+                '<span class="machine-tag" title="' + primaryMachine + '">' + shortMachine + '</span>' +
+                '<button type="button" class="btn-unlink" onclick="resetDevice(\\'' + safeKey + '\\')" title="Délier cet ordinateur">' +
+                  '<span>🔄</span> Délier' +
+                '</button>' 
+                : '<span style="color:var(--text-dim); font-size:0.8rem;">Aucune</span>') +
+            '</div>' +
+          '</td>' +
+          '<td>' +
+            '<span style="font-weight:600;">' + actText + '</span>' +
+            (lic.last_app_version ? '<span style="display:block; font-size:0.75rem; color:var(--text-dim);">v' + lic.last_app_version + '</span>' : '') +
+          '</td>' +
+          '<td style="text-align: right;">' +
+            '<div class="action-group" style="justify-content: flex-end;">' +
+              '<button type="button" class="action-btn edit-btn" onclick="openEditDialog(\\'' + safeKey + '\\')" title="Modifier la licence">✏️ Éditer</button>' +
+              (lic.status === 'active' 
+                ? '<button type="button" class="action-btn" onclick="setStatus(\\'' + safeKey + '\\', \\'suspended\\')">⏸️ Suspendre</button>'
+                : '<button type="button" class="action-btn" onclick="setStatus(\\'' + safeKey + '\\', \\'active\\')">▶️ Activer</button>') +
+              '<button type="button" class="action-btn delete-btn" onclick="deleteLicenseItem(\\'' + safeKey + '\\')" title="Supprimer définitivement">🗑️</button>' +
+            '</div>' +
+          '</td>' +
+        '</tr>';
+      }).join('');
     }
 
-    async function setStatus(key, status) {
+    function copyText(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast('Clé copiée dans le presse-papier !');
+      }).catch(() => {
+        const input = document.createElement('input');
+        input.value = text;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        showToast('Clé copiée !');
+      });
+    }
+
+    // Filter clicks
+    filterTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        filterTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        currentFilter = tab.dataset.filter;
+        renderTable();
+      });
+    });
+
+    searchInput.addEventListener('input', renderTable);
+
+    // Refresh
+    document.getElementById('refreshBtn').addEventListener('click', async () => {
+      const icon = document.getElementById('refreshIcon');
+      icon.style.transform = 'rotate(360deg)';
+      icon.style.transition = 'transform 0.5s';
+      setTimeout(() => { icon.style.transform = ''; icon.style.transition = ''; }, 500);
+
       try {
-        const data = await api('/api/licenses/set-status', {
-          method: 'POST',
-          body: JSON.stringify({ license_key: key, status })
-        });
-        applyLicenseMutation(data.license, 'Statut mis a jour.');
-      } catch (error) {
-        setFeedback(error.message, true);
+        const res = await fetch('/api/licenses');
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.licenses)) {
+          licenses = data.licenses;
+          updateMetrics();
+          renderTable();
+          showToast('Liste actualisée avec succès');
+        }
+      } catch (e) {
+        showToast('Erreur actualisation: ' + e.message, 'error');
       }
-    }
+    });
 
-    async function resetMachines(key) {
+    // Create modal
+    document.getElementById('openCreateBtn').addEventListener('click', () => {
+      document.getElementById('dialogTitle').textContent = 'Nouvelle Licence';
+      document.getElementById('formMode').value = 'create';
+      document.getElementById('formKey').readOnly = false;
+      document.getElementById('formKey').value = generateLicenseKey();
+      document.getElementById('formName').value = '';
+      document.getElementById('formEmail').value = '';
+      document.getElementById('formStatus').value = 'active';
+      document.getElementById('formDevices').value = '1';
+      document.getElementById('formExpiration').value = '';
+      document.getElementById('formNotes').value = '';
+      licenseDialog.showModal();
+    });
+
+    document.getElementById('genKeyBtn').addEventListener('click', () => {
+      document.getElementById('formKey').value = generateLicenseKey();
+    });
+
+    // Quick duration chips
+    document.querySelectorAll('.chip-btn').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const days = parseInt(chip.dataset.days, 10);
+        if (days === 0) {
+          document.getElementById('formExpiration').value = '';
+          return;
+        }
+        const target = new Date();
+        target.setDate(target.getDate() + days);
+        const y = target.getFullYear();
+        const m = String(target.getMonth() + 1).padStart(2, '0');
+        const d = String(target.getDate()).padStart(2, '0');
+        document.getElementById('formExpiration').value = y + '-' + m + '-' + d;
+      });
+    });
+
+    // Open edit dialog
+    window.openEditDialog = function(key) {
+      const lic = licenses.find(l => l.license_key === key);
+      if (!lic) return;
+
+      document.getElementById('dialogTitle').textContent = 'Modifier la Licence';
+      document.getElementById('formMode').value = 'edit';
+      document.getElementById('formKey').readOnly = true;
+      document.getElementById('formKey').value = lic.license_key;
+      document.getElementById('formName').value = lic.customer_name || '';
+      document.getElementById('formEmail').value = lic.customer_email || '';
+      document.getElementById('formStatus').value = lic.status || 'active';
+      document.getElementById('formDevices').value = lic.max_devices || 1;
+      document.getElementById('formNotes').value = lic.notes || '';
+
+      if (lic.expires_at) {
+        const d = new Date(lic.expires_at);
+        if (!isNaN(d.getTime())) {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          document.getElementById('formExpiration').value = y + '-' + m + '-' + day;
+        } else {
+          document.getElementById('formExpiration').value = '';
+        }
+      } else {
+        document.getElementById('formExpiration').value = '';
+      }
+
+      licenseDialog.showModal();
+    };
+
+    // Save license submit
+    licenseForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        license_key: document.getElementById('formKey').value.trim(),
+        customer_name: document.getElementById('formName').value.trim(),
+        customer_email: document.getElementById('formEmail').value.trim(),
+        status: document.getElementById('formStatus').value,
+        max_devices: parseInt(document.getElementById('formDevices').value, 10) || 1,
+        expires_at: document.getElementById('formExpiration').value || null,
+        notes: document.getElementById('formNotes').value.trim()
+      };
+
       try {
-        const data = await api('/api/licenses/reset-machines', {
+        const res = await fetch('/api/licenses/upsert', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.ok && data.license) {
+          const idx = licenses.findIndex(l => l.license_key === data.license.license_key);
+          if (idx >= 0) licenses[idx] = data.license;
+          else licenses.unshift(data.license);
+
+          updateMetrics();
+          renderTable();
+          licenseDialog.close();
+          showToast('Licence enregistrée avec succès !');
+        } else {
+          showToast('Erreur: ' + (data.error || 'Impossible d\\'enregistrer'), 'error');
+        }
+      } catch (err) {
+        showToast('Erreur: ' + err.message, 'error');
+      }
+    });
+
+    // Reset device
+    window.resetDevice = async function(key) {
+      if (!confirm('Voulez-vous détacher la machine de cette licence ? Le client pourra réactiver son nouveau PC.')) return;
+      try {
+        const res = await fetch('/api/licenses/reset-machines', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ license_key: key })
         });
-        applyLicenseMutation(data.license, 'Appareils reinitialises.');
-      } catch (error) {
-        setFeedback(error.message, true);
+        const data = await res.json();
+        if (data.ok && data.license) {
+          const idx = licenses.findIndex(l => l.license_key === key);
+          if (idx >= 0) licenses[idx] = data.license;
+          renderTable();
+          showToast('Machine réinitialisée !');
+        }
+      } catch (err) {
+        showToast('Erreur: ' + err.message, 'error');
       }
-    }
+    };
 
-    function openCreateDialog() {
-      createForm.reset();
-      createForm.elements.max_devices.value = '1';
-      if (createDurationPreset) {
-        createDurationPreset.value = '';
-      }
-      createDialog.showModal();
-    }
-
-    function closeCreateDialog() {
-      createDialog.close();
-    }
-
-    function openEditDialog(licenseKey) {
-      const license = findLicenseByKey(licenseKey);
-      if (!license) {
-        setFeedback('Licence introuvable.', true);
-        return;
-      }
-      editForm.elements.license_key.value = String(license.license_key || '');
-      editForm.elements.customer_name.value = String(license.customer_name || '');
-      editForm.elements.customer_email.value = String(license.customer_email || '');
-      editForm.elements.status.value = String(license.status || 'active');
-      editForm.elements.expires_at.value = toInputDateValue(license.expires_at);
-      if (editDurationPreset) {
-        editDurationPreset.value = '';
-      }
-      editForm.elements.max_devices.value = String(license.max_devices || 1);
-      editForm.elements.notes.value = String(license.notes || '');
-      editDialog.showModal();
-    }
-
-    function closeEditDialog() {
-      editDialog.close();
-    }
-
-    function openExpirationDialog(licenseKey, expiresAt) {
-      expirationLicenseKeyInput.value = licenseKey;
-      expirationDateInput.value = toInputDateValue(expiresAt);
-      if (expirationDurationPreset) {
-        expirationDurationPreset.value = '';
-      }
-      expirationDialog.showModal();
-    }
-
-    function closeExpirationDialog() {
-      expirationDialog.close();
-    }
-
-    function clearExpirationValue() {
-      expirationDateInput.value = '';
-      if (expirationDurationPreset) {
-        expirationDurationPreset.value = '';
-      }
-    }
-
-    function clearFilters() {
-      searchInput.value = '';
-      statusFilter.value = 'all';
-      renderLicenses();
-    }
-
-    async function loadAnnouncement() {
+    // Set status
+    window.setStatus = async function(key, status) {
       try {
-        const data = await api('/api/announcements/active');
-        activeAnnouncement = data.announcement || null;
-        syncAnnouncementForm();
-      } catch (error) {
-        setFeedback(error.message, true);
-      }
-    }
-
-    async function saveAnnouncement() {
-      try {
-        const payload = {
-          title: String(announcementTitle.value || '').trim(),
-          message: String(announcementMessage.value || '').trim(),
-          target_type: String(announcementTargetType.value || 'all').trim(),
-          target_value: String(announcementTargetValue.value || '').trim(),
-          active: Boolean(announcementActive.checked)
-        };
-        const data = await api('/api/announcements/upsert', {
+        const res = await fetch('/api/licenses/set-status', {
           method: 'POST',
-          body: JSON.stringify(payload)
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ license_key: key, status })
         });
-        activeAnnouncement = data.announcement || null;
-        syncAnnouncementForm();
-        setFeedback('Annonce enregistree avec succes.');
-      } catch (error) {
-        setFeedback(error.message, true);
+        const data = await res.json();
+        if (data.ok && data.license) {
+          const idx = licenses.findIndex(l => l.license_key === key);
+          if (idx >= 0) licenses[idx] = data.license;
+          updateMetrics();
+          renderTable();
+          showToast('Statut mis à jour : ' + status);
+        }
+      } catch (err) {
+        showToast('Erreur: ' + err.message, 'error');
       }
-    }
+    };
 
-    async function clearAnnouncement() {
+    // Delete license
+    window.deleteLicenseItem = async function(key) {
+      if (!confirm('Êtes-vous sûr de vouloir SUPPRIMER DÉFINITIVEMENT cette licence ? Cette action est irréversible.')) return;
       try {
-        const data = await api('/api/announcements/clear', {
+        const res = await fetch('/api/licenses/delete', {
           method: 'POST',
-          body: JSON.stringify({})
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ license_key: key })
         });
-        activeAnnouncement = data.announcement || null;
-        syncAnnouncementForm();
-        setFeedback('Annonce retiree.');
-      } catch (error) {
-        setFeedback(error.message, true);
+        const data = await res.json();
+        if (data.ok) {
+          licenses = licenses.filter(l => l.license_key !== key);
+          updateMetrics();
+          renderTable();
+          showToast('Licence supprimée !');
+        } else {
+          showToast('Erreur suppression: ' + (data.error || 'Échec'), 'error');
+        }
+      } catch (err) {
+        showToast('Erreur: ' + err.message, 'error');
       }
-    }
+    };
 
-    createForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const formData = new FormData(createForm);
+    // Announcement Modal
+    document.getElementById('openAnnouncementBtn').addEventListener('click', () => {
+      document.getElementById('annTitle').value = activeAnnouncement?.title || '';
+      document.getElementById('annMessage').value = activeAnnouncement?.message || '';
+      document.getElementById('annTargetType').value = activeAnnouncement?.target_type || 'all';
+      document.getElementById('annTargetValue').value = activeAnnouncement?.target_value || '';
+      document.getElementById('annActive').checked = Boolean(activeAnnouncement?.active);
+      announcementDialog.showModal();
+    });
+
+    announcementForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
       const payload = {
-        license_key: String(formData.get('license_key') || '').trim(),
-        customer_name: String(formData.get('customer_name') || '').trim(),
-        customer_email: String(formData.get('customer_email') || '').trim(),
-        status: String(formData.get('status') || 'active').trim().toLowerCase(),
-        expires_at: String(formData.get('expires_at') || '').trim() || null,
-        max_devices: Number(formData.get('max_devices') || 1),
-        notes: String(formData.get('notes') || '').trim()
+        title: document.getElementById('annTitle').value.trim(),
+        message: document.getElementById('annMessage').value.trim(),
+        target_type: document.getElementById('annTargetType').value,
+        target_value: document.getElementById('annTargetValue').value.trim(),
+        active: document.getElementById('annActive').checked
       };
 
       try {
-        const data = await api('/api/licenses/upsert', {
+        const res = await fetch('/api/announcements', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        closeCreateDialog();
-        applyLicenseMutation(data.license, 'Licence creee avec succes.');
-      } catch (error) {
-        setFeedback(error.message, true);
+        const data = await res.json();
+        if (data.ok) {
+          activeAnnouncement = data.announcement;
+          announcementDialog.close();
+          showToast('Annonce enregistrée !');
+        }
+      } catch (err) {
+        showToast('Erreur annonce: ' + err.message, 'error');
       }
     });
 
-    editForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const formData = new FormData(editForm);
-      const payload = {
-        license_key: String(formData.get('license_key') || '').trim(),
-        customer_name: String(formData.get('customer_name') || '').trim(),
-        customer_email: String(formData.get('customer_email') || '').trim(),
-        status: String(formData.get('status') || 'active').trim().toLowerCase(),
-        expires_at: String(formData.get('expires_at') || '').trim() || null,
-        max_devices: Number(formData.get('max_devices') || 1),
-        notes: String(formData.get('notes') || '').trim()
-      };
-
+    document.getElementById('clearAnnBtn').addEventListener('click', async () => {
+      if (!confirm('Supprimer l\\'annonce active ?')) return;
       try {
-        const data = await api('/api/licenses/upsert', {
-          method: 'POST',
-          body: JSON.stringify(payload)
-        });
-        closeEditDialog();
-        applyLicenseMutation(data.license, 'Licence mise a jour avec succes.');
-      } catch (error) {
-        setFeedback(error.message, true);
+        const res = await fetch('/api/announcements/clear', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          activeAnnouncement = null;
+          announcementDialog.close();
+          showToast('Annonce retirée !');
+        }
+      } catch (err) {
+        showToast('Erreur: ' + err.message, 'error');
       }
     });
 
-    expirationForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      try {
-        const data = await api('/api/licenses/set-expiration', {
-          method: 'POST',
-          body: JSON.stringify({
-            license_key: String(expirationLicenseKeyInput.value || '').trim(),
-            expires_at: String(expirationDateInput.value || '').trim() || null
-          })
-        });
-        closeExpirationDialog();
-        applyLicenseMutation(data.license, 'Date d expiration mise a jour.');
-      } catch (error) {
-        setFeedback(error.message, true);
-      }
-    });
-
-    async function loadLicenses() {
-      try {
-        const data = await api('/api/licenses');
-        allLicenses = Array.isArray(data.licenses) ? data.licenses : [];
-        updateStats(allLicenses);
-        renderLicenses();
-        setFeedback('');
-      } catch (error) {
-        licensesGrid.innerHTML = '<div class="empty">Erreur de chargement.</div>';
-        tableSubtitle.textContent = 'Chargement impossible.';
-        setFeedback(error.message, true);
-      }
-    }
-
-    licensesGrid.addEventListener('click', (event) => {
-      const actionButton = event.target.closest('button[data-action]');
-      if (!actionButton) {
-        return;
-      }
-
-      const licenseKey = String(actionButton.dataset.licenseKey || '').trim();
-      const action = String(actionButton.dataset.action || '').trim();
-
-      if (action === 'edit-license') {
-        openEditDialog(licenseKey);
-        return;
-      }
-
-      if (action === 'set-status') {
-        setStatus(licenseKey, String(actionButton.dataset.status || '').trim());
-        return;
-      }
-
-      if (action === 'set-expiration') {
-        openExpirationDialog(licenseKey, String(actionButton.dataset.licenseExpiration || ''));
-        return;
-      }
-
-      if (action === 'reset-machines') {
-        resetMachines(licenseKey);
-      }
-    });
-
-    refreshLicensesButton.addEventListener('click', loadLicenses);
-    openCreateLicenseButton.addEventListener('click', openCreateDialog);
-    clearFiltersButton.addEventListener('click', clearFilters);
-    closeCreateLicenseButton.addEventListener('click', closeCreateDialog);
-    closeEditLicenseButton.addEventListener('click', closeEditDialog);
-    clearExpirationButton.addEventListener('click', clearExpirationValue);
-    closeExpirationButton.addEventListener('click', closeExpirationDialog);
-    bindDurationPreset(createDurationPreset, createExpirationInput);
-    bindDurationPreset(editDurationPreset, editExpirationInput);
-    bindDurationPreset(expirationDurationPreset, expirationDateInput);
-    searchInput.addEventListener('input', renderLicenses);
-    statusFilter.addEventListener('change', renderLicenses);
-    announcementTargetType.addEventListener('change', updateAnnouncementTargetField);
-    saveAnnouncementButton.addEventListener('click', saveAnnouncement);
-    clearAnnouncementButton.addEventListener('click', clearAnnouncement);
-    syncAnnouncementForm();
-
-    if (allLicenses.length) {
-      updateStats(allLicenses);
-      renderLicenses();
-    } else {
-      loadLicenses();
-    }
-
-    loadAnnouncement();
+    // Initial render
+    updateMetrics();
+    renderTable();
   </script>
 </body>
 </html>`;
 }
 
-module.exports = { renderAdminLicensesPage };
+module.exports = {
+  renderAdminLicensesPage
+};

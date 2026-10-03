@@ -212,9 +212,49 @@ async function saveLicense(license) {
   );
 }
 
+async function deleteLicenseFromSupabase(licenseKey) {
+  if (!licenseKey) {
+    return false;
+  }
+
+  const key = String(licenseKey).trim();
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new Error('Supabase client is not configured.');
+  }
+
+  const { error } = await supabase
+    .from('licenses')
+    .delete()
+    .eq('license_key', key);
+
+  if (error) {
+    throw error;
+  }
+
+  return true;
+}
+
+async function deleteLicense(licenseKey) {
+  return withFallback(
+    () => deleteLicenseFromSupabase(licenseKey),
+    () => {
+      if (!licenseKey) {
+        return false;
+      }
+      const key = String(licenseKey).trim();
+      const state = readLocalState();
+      state.licenses = state.licenses.filter((item) => item.license_key !== key);
+      writeLocalState(state);
+      return true;
+    }
+  );
+}
+
 module.exports = {
   getLicenses,
   findLicenseByKey,
   saveLicense,
+  deleteLicense,
   sanitizeLicense
 };
