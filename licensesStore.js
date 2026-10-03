@@ -1,25 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const { Firestore } = require('@google-cloud/firestore');
+const { getSupabaseClient } = require('./supabaseClient');
 
 const dataDir = path.join(__dirname, 'data');
 const dataFile = path.join(dataDir, 'licenses.json');
-const collectionName = process.env.FIRESTORE_LICENSES_COLLECTION || 'licenses';
 
 const defaultState = {
   licenses: []
 };
-
-let firestoreInstance = null;
-
-function getFirestore() {
-  if (firestoreInstance) {
-    return firestoreInstance;
-  }
-
-  firestoreInstance = new Firestore();
-  return firestoreInstance;
-}
 
 function ensureStore() {
   if (!fs.existsSync(dataDir)) {
@@ -93,58 +81,106 @@ function sanitizeLicense(license) {
   };
 }
 
-async function getLicensesFromFirestore() {
-  const db = getFirestore();
-  const snapshot = await db.collection(collectionName).get();
-  return snapshot.docs.map((doc) => sanitizeLicense(doc.data()));
+async function getLicensesFromSupabase() {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new Error('Supabase client is not configured.');
+  }
+
+  const { data, error } = await supabase
+    .from('licenses')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data || []).map(sanitizeLicense);
 }
 
-async function findLicenseByKeyFromFirestore(licenseKey) {
+async function findLicenseByKeyFromSupabase(licenseKey) {
   if (!licenseKey) {
     return null;
   }
 
   const key = String(licenseKey).trim();
-  const db = getFirestore();
-  const snapshot = await db
-    .collection(collectionName)
-    .where('license_key', '==', key)
-    .limit(1)
-    .get();
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new Error('Supabase client is not configured.');
+  }
 
-  if (snapshot.empty) {
+  const { data, error } = await supabase
+    .from('licenses')
+    .select('*')
+    .eq('license_key', key)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
     return null;
   }
 
-  return sanitizeLicense(snapshot.docs[0].data());
+  return sanitizeLicense(data);
 }
 
-async function saveLicenseToFirestore(license) {
+async function saveLicenseToSupabase(license) {
   const next = sanitizeLicense(license);
-  const db = getFirestore();
-  await db.collection(collectionName).doc(next.license_key).set(next, { merge: true });
-  return next;
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new Error('Supabase client is not configured.');
+  }
+
+  const payload = {
+    license_key: next.license_key,
+    customer_name: next.customer_name,
+    customer_email: next.customer_email,
+    status: next.status,
+    expires_at: next.expires_at,
+    machine_id: next.machine_id,
+    machine_ids: next.machine_ids,
+    max_devices: next.max_devices,
+    last_seen_at: next.last_seen_at,
+    activated_at: next.activated_at,
+    last_app_version: next.last_app_version,
+    notes: next.notes
+  };
+
+  const { data, error } = await supabase
+    .from('licenses')
+    .upsert(payload, { onConflict: 'license_key' })
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return sanitizeLicense(data || next);
 }
 
 async function withFallback(work, fallback) {
   try {
     return await work();
   } catch (error) {
-    console.warn('Firestore unavailable, falling back to local JSON store.', error.message);
+    console.warn('Supabase unavailable, falling back to local JSON store:', error.message);
     return fallback();
   }
 }
 
 async function getLicenses() {
   return withFallback(
-    () => getLicensesFromFirestore(),
+    () => getLicensesFromSupabase(),
     () => readLocalState().licenses.map(sanitizeLicense)
   );
 }
 
 async function findLicenseByKey(licenseKey) {
   return withFallback(
-    () => findLicenseByKeyFromFirestore(licenseKey),
+    () => findLicenseByKeyFromSupabase(licenseKey),
     () => {
       if (!licenseKey) {
         return null;
@@ -158,7 +194,7 @@ async function findLicenseByKey(licenseKey) {
 
 async function saveLicense(license) {
   return withFallback(
-    () => saveLicenseToFirestore(license),
+    () => saveLicenseToSupabase(license),
     () => {
       const state = readLocalState();
       const next = sanitizeLicense(license);
