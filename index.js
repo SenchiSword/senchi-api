@@ -406,6 +406,18 @@ app.get('/health', (req, res) => {
   });
 });
 
+app.get('/api/debug', async (req, res) => {
+  const { testSupabaseConnection } = require('./supabaseClient');
+  const supabaseDiag = await testSupabaseConnection();
+  res.json({
+    ok: true,
+    app: appName,
+    version: appVersion,
+    uptimeSeconds: Math.floor(process.uptime()),
+    supabase: supabaseDiag
+  });
+});
+
 app.get('/api/status', (req, res) => {
   res.json({
     ok: true,
