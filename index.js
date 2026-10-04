@@ -397,6 +397,8 @@ function requireAdminAuth(req, res, next) {
   res.redirect(302, '/admin/login');
 }
 
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
 app.get('/health', (req, res) => {
   res.json({
     ok: true,
