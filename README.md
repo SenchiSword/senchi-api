@@ -3,12 +3,13 @@
 Backend Node.js / Express pour l'application desktop Tauri **Senchi Sword**. Il gère :
 
 - La vérification de santé de l'API (`/health`) et favicon (`/favicon.ico`).
-- La validation en temps réel des licences par machine HWID (`/api/license/validate`).
+- La validation en temps réel des licences par machine HWID (`/api/license/validate`) avec Rate Limiting.
 - La signature cryptographique des preuves de licence (ECDSA P-256 via `licenseProof.js`).
-- Le panneau d'administration web des licences (`/admin/licenses`).
-- La page d'authentification dédiée avec session (`/admin/login` et `/admin/logout`).
+- Le panneau d'administration web des licences (`/admin/licenses`) avec export CSV et modales personnalisées.
+- La page d'authentification dédiée avec session (`/admin/login` et `/admin/logout`) protégée contre le brute-force.
 - La persistance sécurisée dans **Supabase (PostgreSQL)** en production (avec fallback local JSON).
-- La diffusion d'annonces en jeu (`/api/announcement`).
+- Le bot d'alertes Discord automatique **« Clepsydre »** (`discordWebhook.js`).
+- La diffusion d'annonces en jeu (`/api/announcement` et `/api/announcements`).
 
 ---
 
@@ -28,16 +29,29 @@ Backend Node.js / Express pour l'application desktop Tauri **Senchi Sword**. Il 
 - **Interface** :
   - Métriques KPI en temps réel (Total, Actives, En risque, Expirent sous 14 jours).
   - Filtres par statut (Toutes, Actives, En attente, À risque) et recherche textuelle instantanée.
+  - Bouton **Export CSV** : Téléchargement instantané en UTF-8 (BOM `\uFEFF`) compatible Excel avec séparateur `;`.
+  - Bouton **Test Discord** : Test de connectivité du webhook avec le bot Clepsydre.
   - Générateur de clés de licence formatées `SENCHI-XXXX-XXXX-XXXX-XXXX`.
   - Puces de durée rapide (+7j, +30j, +90j, +365j, Illimitée).
   - Détachement de machine (Délier 🔄).
   - Suppression définitive dans Supabase (🗑️).
-  - Gestion des annonces globales.
+  - Gestion des annonces en jeu (Création, modification, suppression).
   - Modales personnalisées `<dialog>` (aucun `confirm()` ou `alert()` natif du navigateur).
 
 ---
 
-## 3. Configuration Supabase
+## 3. Bot Discord « Clepsydre »
+
+Le module `server/discordWebhook.js` envoie des notifications temps réel :
+- 🎉 **Première activation** : Première utilisation historique de la licence.
+- 🔄 **Réactivation de licence** : Reconnexion après qu'une machine a été déliée par l'admin.
+- 💻 **Machine supplémentaire** : Rattachement d'un 2ème PC sur une licence multi-postes.
+- ⚠️ **Dépassement de quota** : Tentative d'utilisation sur un PC excédant le quota `max_devices`.
+- 🔔 **Test Webhook** : Affiche `Infrastructure : 🔒 Sécurisée`.
+
+---
+
+## 4. Configuration Supabase
 
 1. Créez un projet sur [supabase.com](https://supabase.com).
 2. Rendez-vous dans **SQL Editor** -> **New query**.
@@ -48,7 +62,7 @@ Backend Node.js / Express pour l'application desktop Tauri **Senchi Sword**. Il 
 
 ---
 
-## 4. Variables d'environnement requises
+## 5. Variables d'environnement requises
 
 | Variable | Description | Exemple / Valeur |
 | :--- | :--- | :--- |
@@ -64,10 +78,11 @@ Backend Node.js / Express pour l'application desktop Tauri **Senchi Sword**. Il 
 | `LICENSE_SIGNING_PRIVATE_KEY_PEM` | Clé privée de signature ECDSA | `-----BEGIN EC PRIVATE KEY-----\n...` |
 | `LICENSE_SIGNING_KEY_ID` | Identifiant de clé | `main` |
 | `DISCORD_WEBHOOK_URL` | *(Optionnel)* URL Webhook Discord pour alertes en temps réel | `https://discord.com/api/webhooks/...` |
+| `DISCORD_BOT_NAME` | *(Optionnel)* Surcharge du nom du bot (défaut : `Clepsydre`) | `Clepsydre` |
 
 ---
 
-## 5. Déploiement vers Render via Git Subtree
+## 6. Déploiement vers Render via Git Subtree
 
 Render est connecté au dépôt `https://github.com/SenchiSword/senchi-api.git`.
 
@@ -85,16 +100,16 @@ git branch -D server-deploy-temp
 
 ---
 
-## 6. Endpoints API
+## 7. Endpoints API
 
 | Méthode | Route | Description |
 | :--- | :--- | :--- |
 | `GET` | `/health` | Healthcheck (état serveur, version) |
 | `GET` | `/favicon.ico` | Favicon (204 No Content) |
-| `POST` | `/api/license/validate` | Validation licence client + preuve ECDSA |
-| `POST` | `/api/announcement` | Récupération de l'annonce active |
+| `POST` | `/api/license/validate` | Validation licence client + preuve ECDSA (Rate-limited: 40/min) |
+| `POST` | `/api/announcement` | Récupération de l'annonce active pour un joueur |
 | `GET` | `/admin/login` | Page de connexion admin |
-| `POST` | `/admin/login` | Traitement de la connexion |
+| `POST` | `/admin/login` | Traitement de la connexion (Rate-limited: 10/15min) |
 | `ALL` | `/admin/logout` | Déconnexion admin |
 | `GET` | `/admin/licenses` | Tableau de bord admin |
 | `GET` | `/api/licenses` | Liste des licences |
@@ -102,5 +117,8 @@ git branch -D server-deploy-temp
 | `POST` | `/api/licenses/delete` | Suppression d'une licence |
 | `POST` | `/api/licenses/reset-machines` | Détacher la machine liée |
 | `POST` | `/api/licenses/set-status` | Modifier le statut |
+| `GET` | `/api/announcements` | Consultation de l'annonce active |
 | `POST` | `/api/announcements` | Sauvegarder l'annonce |
+| `POST` | `/api/announcements/upsert` | Sauvegarder l'annonce (alias) |
 | `POST` | `/api/announcements/clear` | Supprimer l'annonce |
+| `POST` | `/api/discord/test` | Tester la connexion Webhook Discord |
