@@ -109,7 +109,7 @@ async function notifyTestWebhook() {
     color: 0x10B981,
     fields: [
       { name: 'Statut', value: '🟢 En ligne & Connecté', inline: true },
-      { name: 'Serveur', value: 'App / Serveur', inline: true }
+      { name: 'Infrastructure', value: '🔒 Sécurisée', inline: true }
     ],
     timestamp: new Date().toISOString(),
     footer: { text: `${botName} • Comte Harebourg` }
