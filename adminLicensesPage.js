@@ -235,6 +235,20 @@ function renderAdminLicensesPage(initialLicenses = [], initialAnnouncement = nul
       box-shadow: 0 6px 22px rgba(14, 165, 233, 0.5);
     }
 
+    .btn-danger {
+      background: linear-gradient(135deg, rgba(244, 63, 94, 0.25), rgba(225, 29, 72, 0.35));
+      border: 1px solid rgba(244, 63, 94, 0.45);
+      color: #FDA4AF;
+      font-weight: 700;
+    }
+
+    .btn-danger:hover {
+      background: linear-gradient(135deg, #E11D48, #F43F5E);
+      color: #FFF;
+      border-color: #F43F5E;
+      box-shadow: 0 4px 18px rgba(244, 63, 94, 0.4);
+    }
+
     .btn-icon-only {
       padding: 10px;
       border-radius: var(--radius-md);
@@ -868,6 +882,10 @@ function renderAdminLicensesPage(initialLicenses = [], initialAnnouncement = nul
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Nouvelle Licence
         </button>
+        <a href="/admin/logout" class="btn" title="Se déconnecter" style="color:var(--rose); border-color:rgba(244,63,94,0.3);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Déconnexion
+        </a>
       </div>
     </header>
 
@@ -1061,6 +1079,24 @@ function renderAdminLicensesPage(initialLicenses = [], initialAnnouncement = nul
     </form>
   </dialog>
 
+  <!-- Dialog: Custom Confirmation Dialog (No native browser popups) -->
+  <dialog id="confirmDialog">
+    <div class="dialog-header">
+      <h3 style="display:flex; align-items:center; gap:10px;">
+        <span id="confirmIcon" style="font-size:1.3rem;">⚠️</span>
+        <span id="confirmHeading">Confirmation</span>
+      </h3>
+      <button type="button" class="close-dialog-btn" onclick="document.getElementById('confirmDialog').close()">✕</button>
+    </div>
+    <div class="dialog-body">
+      <p id="confirmMessage" style="font-size:0.95rem; color:var(--text-main); line-height:1.6;"></p>
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn" onclick="document.getElementById('confirmDialog').close()">Annuler</button>
+      <button type="button" class="btn btn-danger" id="confirmActionBtn">Confirmer</button>
+    </div>
+  </dialog>
+
   <!-- Toast Container -->
   <div id="toast-container"></div>
 
@@ -1077,6 +1113,38 @@ function renderAdminLicensesPage(initialLicenses = [], initialAnnouncement = nul
     const licenseForm = document.getElementById('licenseForm');
     const announcementDialog = document.getElementById('announcementDialog');
     const announcementForm = document.getElementById('announcementForm');
+    const confirmDialog = document.getElementById('confirmDialog');
+    const confirmHeading = document.getElementById('confirmHeading');
+    const confirmMessage = document.getElementById('confirmMessage');
+    const confirmIcon = document.getElementById('confirmIcon');
+    const confirmActionBtn = document.getElementById('confirmActionBtn');
+
+    function showConfirm({ title, message, icon = '⚠️', confirmText = 'Confirmer', danger = false }) {
+      return new Promise((resolve) => {
+        confirmHeading.textContent = title;
+        confirmMessage.textContent = message;
+        confirmIcon.textContent = icon;
+        confirmActionBtn.textContent = confirmText;
+        confirmActionBtn.className = danger ? 'btn btn-danger' : 'btn btn-primary';
+
+        const onConfirm = () => {
+          cleanup();
+          confirmDialog.close();
+          resolve(true);
+        };
+        const onCancel = () => {
+          cleanup();
+          resolve(false);
+        };
+        function cleanup() {
+          confirmActionBtn.removeEventListener('click', onConfirm);
+          confirmDialog.removeEventListener('close', onCancel);
+        }
+        confirmActionBtn.addEventListener('click', onConfirm);
+        confirmDialog.addEventListener('close', onCancel, { once: true });
+        confirmDialog.showModal();
+      });
+    }
 
     function showToast(message, type = 'success') {
       const container = document.getElementById('toast-container');
@@ -1410,7 +1478,14 @@ function renderAdminLicensesPage(initialLicenses = [], initialAnnouncement = nul
 
     // Reset device
     window.resetDevice = async function(key) {
-      if (!confirm('Voulez-vous détacher la machine de cette licence ? Le client pourra réactiver son nouveau PC.')) return;
+      const ok = await showConfirm({
+        title: 'Délier la machine',
+        message: 'Voulez-vous détacher la machine liée à la clé "' + key + '" ? Le client pourra réactiver sa licence sur un nouvel ordinateur.',
+        icon: '🔄',
+        confirmText: 'Délier la machine',
+        danger: false
+      });
+      if (!ok) return;
       try {
         const res = await fetch('/api/licenses/reset-machines', {
           method: 'POST',
@@ -1452,7 +1527,14 @@ function renderAdminLicensesPage(initialLicenses = [], initialAnnouncement = nul
 
     // Delete license
     window.deleteLicenseItem = async function(key) {
-      if (!confirm('Êtes-vous sûr de vouloir SUPPRIMER DÉFINITIVEMENT cette licence ? Cette action est irréversible.')) return;
+      const ok = await showConfirm({
+        title: 'Supprimer définitivement la licence',
+        message: 'Êtes-vous sûr de vouloir SUPPRIMER DÉFINITIVEMENT cette licence ? Cette action est irréversible et supprimera la ligne de la base Supabase.',
+        icon: '🗑️',
+        confirmText: 'Supprimer définitivement',
+        danger: true
+      });
+      if (!ok) return;
       try {
         const res = await fetch('/api/licenses/delete', {
           method: 'POST',
@@ -1511,7 +1593,14 @@ function renderAdminLicensesPage(initialLicenses = [], initialAnnouncement = nul
     });
 
     document.getElementById('clearAnnBtn').addEventListener('click', async () => {
-      if (!confirm('Supprimer l\\'annonce active ?')) return;
+      const ok = await showConfirm({
+        title: 'Retirer l\'annonce',
+        message: 'Voulez-vous désactiver et supprimer l\'annonce active actuellement affichée aux joueurs ?',
+        icon: '📢',
+        confirmText: 'Retirer l\'annonce',
+        danger: true
+      });
+      if (!ok) return;
       try {
         const res = await fetch('/api/announcements/clear', { method: 'POST' });
         const data = await res.json();

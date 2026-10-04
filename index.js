@@ -14,6 +14,7 @@ const {
 } = require('./announcementsStore');
 const { createLicenseProof } = require('./licenseProof');
 const { renderAdminLicensesPage } = require('./adminLicensesPage');
+const { renderAdminLoginPage } = require('./adminLoginPage');
 
 const app = express();
 const port = Number(process.env.PORT || 8080);
@@ -386,7 +387,6 @@ function requireAdminAuth(req, res, next) {
   }
 
   if (isAdminApiRoute) {
-    res.setHeader('WWW-Authenticate', 'Basic realm="Senchi Admin"');
     res.status(401).json({
       ok: false,
       error: 'Admin authentication required'
@@ -394,8 +394,7 @@ function requireAdminAuth(req, res, next) {
     return;
   }
 
-  res.setHeader('WWW-Authenticate', 'Basic realm="Senchi Admin"');
-  res.status(401).type('html').send('Authentification admin requise.');
+  res.redirect(302, '/admin/login');
 }
 
 app.get('/health', (req, res) => {
@@ -833,6 +832,36 @@ app.get('/admin/licenses', async (req, res, next) => {
 
 app.get('/admin/license', (req, res) => {
   res.redirect(302, '/admin/licenses');
+});
+
+app.get('/login', (req, res) => {
+  res.redirect(302, '/admin/login');
+});
+
+app.get('/admin/login', (req, res) => {
+  if (hasValidAdminSession(req)) {
+    res.redirect(302, '/admin/licenses');
+    return;
+  }
+  res.type('html').send(renderAdminLoginPage());
+});
+
+app.post('/admin/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (username && password && username === adminUsername && password === adminPassword) {
+    setAdminSessionCookie(req, res);
+    res.redirect(302, '/admin/licenses');
+    return;
+  }
+  res.status(401).type('html').send(renderAdminLoginPage("Nom d'utilisateur ou mot de passe incorrect."));
+});
+
+app.all('/admin/logout', (req, res) => {
+  res.setHeader(
+    'Set-Cookie',
+    `${adminSessionCookieName}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax`
+  );
+  res.redirect(302, '/admin/login');
 });
 
 app.use((error, req, res, next) => {
