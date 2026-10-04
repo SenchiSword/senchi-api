@@ -867,7 +867,7 @@ function renderAdminLicensesPage(initialLicenses = [], initialAnnouncement = nul
         </div>
         <div class="brand-info">
           <h1>SENCHI SWORD • LICENCES</h1>
-          <div class="brand-badge">Supabase Live</div>
+          <div class="brand-badge">Système Actif</div>
         </div>
       </div>
       <div class="nav-actions">
