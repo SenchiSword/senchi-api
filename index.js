@@ -580,7 +580,10 @@ app.post('/api/license/validate', licenseValidationLimiter, async (req, res) => 
     return;
   }
 
+  const hadPreviousActivation = Boolean(license.activated_at);
+  const previousMachineCount = Array.isArray(license.machine_ids) ? license.machine_ids.length : 0;
   const isNewMachineActivation = !isKnownMachine;
+
   if (!isKnownMachine) {
     machineIds.push(machineId);
   }
@@ -596,11 +599,20 @@ app.post('/api/license/validate', licenseValidationLimiter, async (req, res) => 
   });
 
   if (isNewMachineActivation) {
+    let activationType = 'first';
+    if (hadPreviousActivation) {
+      if (previousMachineCount === 0) {
+        activationType = 'reactivation';
+      } else {
+        activationType = 'additional';
+      }
+    }
+
     notifyNewMachineActivation({
       license: updatedLicense,
       machineId,
       appVersion,
-      isFirst: machineIds.length === 1
+      activationType
     }).catch(() => {});
   }
 
