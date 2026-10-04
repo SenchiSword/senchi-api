@@ -836,7 +836,15 @@ app.get('/api/announcements/active', async (req, res) => {
   });
 });
 
-app.post('/api/announcements/upsert', async (req, res) => {
+app.get('/api/announcements', async (req, res) => {
+  const announcement = await getActiveAnnouncement();
+  res.json({
+    ok: true,
+    announcement: announcement || null
+  });
+});
+
+async function handleAnnouncementSave(req, res) {
   const existing = await getActiveAnnouncement();
   const normalized = normalizeAnnouncementPayload(req.body, existing);
 
@@ -853,7 +861,10 @@ app.post('/api/announcements/upsert', async (req, res) => {
     ok: true,
     announcement
   });
-});
+}
+
+app.post('/api/announcements', handleAnnouncementSave);
+app.post('/api/announcements/upsert', handleAnnouncementSave);
 
 app.post('/api/announcements/clear', async (req, res) => {
   await clearActiveAnnouncement();
