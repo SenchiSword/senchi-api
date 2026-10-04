@@ -15,8 +15,16 @@ const {
 const { createLicenseProof } = require('./licenseProof');
 const { renderAdminLicensesPage } = require('./adminLicensesPage');
 const { renderAdminLoginPage } = require('./adminLoginPage');
+const rateLimit = require('express-rate-limit');
+const {
+  isDiscordConfigured,
+  notifyNewMachineActivation,
+  notifyDeviceLimitReached,
+  notifyTestWebhook
+} = require('./discordWebhook');
 
 const app = express();
+app.set('trust proxy', 1);
 const port = Number(process.env.PORT || 8080);
 const appName = process.env.APP_NAME || 'Comte Harebourg API';
 const appVersion = process.env.APP_VERSION || '1.0.0';
@@ -316,6 +324,29 @@ function setAdminSessionCookie(req, res) {
   res.setHeader('Set-Cookie', cookieParts.join('; '));
 }
 
+// Rate Limiter: max 10 failed login attempts per 15 minutes per IP
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).type('html').send(renderAdminLoginPage("Trop de tentatives de connexion échouées. Par sécurité, veuillez patienter 15 minutes avant de réessayer."));
+  }
+});
+
+// Rate Limiter: max 40 validations per minute per IP
+const licenseValidationLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    ok: false,
+    error: 'Trop de requêtes. Veuillez patienter avant de réessayer.'
+  }
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cors({
@@ -446,7 +477,7 @@ app.post('/api/announcement', async (req, res) => {
   });
 });
 
-app.post('/api/license/validate', async (req, res) => {
+app.post('/api/license/validate', licenseValidationLimiter, async (req, res) => {
   const {
     clientId,
     licenseKey,
@@ -535,6 +566,7 @@ app.post('/api/license/validate', async (req, res) => {
   const machineIds = Array.isArray(license.machine_ids) ? [...license.machine_ids] : [];
   const isKnownMachine = machineIds.includes(machineId);
   if (!isKnownMachine && machineIds.length >= license.max_devices) {
+    notifyDeviceLimitReached({ license, machineId, appVersion }).catch(() => {});
     res.status(403).json({
       ok: false,
       valid: false,
@@ -548,6 +580,7 @@ app.post('/api/license/validate', async (req, res) => {
     return;
   }
 
+  const isNewMachineActivation = !isKnownMachine;
   if (!isKnownMachine) {
     machineIds.push(machineId);
   }
@@ -561,6 +594,15 @@ app.post('/api/license/validate', async (req, res) => {
     last_seen_at: now,
     last_app_version: appVersion || license.last_app_version || null
   });
+
+  if (isNewMachineActivation) {
+    notifyNewMachineActivation({
+      license: updatedLicense,
+      machineId,
+      appVersion,
+      isFirst: machineIds.length === 1
+    }).catch(() => {});
+  }
 
   const responsePayload = {
     ok: true,
@@ -848,7 +890,7 @@ app.get('/admin/login', (req, res) => {
   res.type('html').send(renderAdminLoginPage());
 });
 
-app.post('/admin/login', (req, res) => {
+app.post('/admin/login', loginLimiter, (req, res) => {
   const { username, password } = req.body || {};
   if (username && password && username === adminUsername && password === adminPassword) {
     setAdminSessionCookie(req, res);
@@ -864,6 +906,22 @@ app.all('/admin/logout', (req, res) => {
     `${adminSessionCookieName}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax`
   );
   res.redirect(302, '/admin/login');
+});
+
+app.post('/api/discord/test', requireAdminAuth, async (req, res) => {
+  if (!isDiscordConfigured()) {
+    res.json({
+      ok: false,
+      message: 'DISCORD_WEBHOOK_URL n\'est pas configurée dans les variables Render.'
+    });
+    return;
+  }
+  const sent = await notifyTestWebhook();
+  if (sent) {
+    res.json({ ok: true, message: 'Message de test envoyé sur Discord avec succès !' });
+  } else {
+    res.json({ ok: false, message: 'Échec d\'envoi vers Discord. Vérifiez l\'URL du webhook.' });
+  }
 });
 
 app.use((error, req, res, next) => {

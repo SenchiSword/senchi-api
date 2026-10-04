@@ -871,6 +871,14 @@ function renderAdminLicensesPage(initialLicenses = [], initialAnnouncement = nul
         </div>
       </div>
       <div class="nav-actions">
+        <button type="button" class="btn" id="exportCsvBtn" title="Télécharger toutes les licences en format CSV">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export CSV
+        </button>
+        <button type="button" class="btn" id="testDiscordBtn" title="Tester le Webhook Discord">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          Test Discord
+        </button>
         <button type="button" class="btn" id="openAnnouncementBtn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           Annonce en jeu
@@ -1369,6 +1377,76 @@ function renderAdminLicensesPage(initialLicenses = [], initialAnnouncement = nul
         }
       } catch (e) {
         showToast('Erreur actualisation: ' + e.message, 'error');
+      }
+    });
+
+    // Export CSV
+    document.getElementById('exportCsvBtn').addEventListener('click', () => {
+      if (!licenses || licenses.length === 0) {
+        showToast('Aucune licence à exporter.', 'error');
+        return;
+      }
+      const headers = [
+        'Cle Licence',
+        'Client',
+        'Email',
+        'Statut',
+        'Max PC',
+        'PC Utilises',
+        'Machines Identifiants',
+        'Date Activation',
+        'Date Expiration',
+        'Version App',
+        'Derniere Activite',
+        'Notes'
+      ];
+      const escapeCsv = (val) => {
+        if (val === null || val === undefined) return '""';
+        return '"' + String(val).replace(/"/g, '""') + '"';
+      };
+      const rows = licenses.map(l => {
+        const machines = Array.isArray(l.machine_ids) ? l.machine_ids : [];
+        return [
+          escapeCsv(l.license_key),
+          escapeCsv(l.customer_name || ''),
+          escapeCsv(l.customer_email || ''),
+          escapeCsv(l.status || 'active'),
+          escapeCsv(l.max_devices || 1),
+          escapeCsv(machines.length),
+          escapeCsv(machines.join(' | ')),
+          escapeCsv(l.activated_at || ''),
+          escapeCsv(l.expires_at || 'Illimitee'),
+          escapeCsv(l.last_app_version || ''),
+          escapeCsv(l.last_seen_at || ''),
+          escapeCsv(l.notes || '')
+        ].join(';');
+      });
+      const csvContent = '\\uFEFF' + [headers.join(';'), ...rows].join('\\r\\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const today = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = 'senchi-licences-' + today + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Export CSV téléchargé avec succès !');
+    });
+
+    // Test Discord Webhook
+    document.getElementById('testDiscordBtn').addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/discord/test', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('Notification envoyée sur Discord ! 🚀');
+        } else {
+          showToast(data.message || 'Webhook Discord non configuré.', 'error');
+        }
+      } catch (err) {
+        showToast('Erreur Discord: ' + err.message, 'error');
       }
     });
 

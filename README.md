@@ -63,6 +63,7 @@ Backend Node.js / Express pour l'application desktop Tauri **Senchi Sword**. Il 
 | `SUPABASE_SERVICE_ROLE_KEY` | Clé secrète `service_role` | `sb_secret_...` |
 | `LICENSE_SIGNING_PRIVATE_KEY_PEM` | Clé privée de signature ECDSA | `-----BEGIN EC PRIVATE KEY-----\n...` |
 | `LICENSE_SIGNING_KEY_ID` | Identifiant de clé | `main` |
+| `DISCORD_WEBHOOK_URL` | *(Optionnel)* URL Webhook Discord pour alertes en temps réel | `https://discord.com/api/webhooks/...` |
 
 ---
 
